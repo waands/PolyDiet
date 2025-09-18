@@ -1,15 +1,16 @@
 using GLTFast;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Collections.Generic; // <— novo
 using TMPro;
 using UnityEngine;
-using static System.Net.Mime.MediaTypeNames;
-using Diagnostics = System.Diagnostics; 
+using Diagnostics = System.Diagnostics;
 using UDebug = UnityEngine.Debug;
 using UI = UnityEngine.UI;
 using UApp = UnityEngine.Application;
-
 
 public class ModelViewer : MonoBehaviour
 {
@@ -19,55 +20,169 @@ public class ModelViewer : MonoBehaviour
     public UI.Button buttonLoad;
     public TMP_Text textStatus;
 
-    // NOVO: bot�es de compress�o
     public UI.Button buttonCompressDraco;
     public UI.Button buttonCompressMeshopt;
-
-    // NOVO: caminhos dos CLIs (preencher no Inspector)
-    [Header("CLI Paths")]
-    [Tooltip("Ex.: Assets/Tools/gltfpack.exe")]
-    public string gltfpackPath = "Assets/Tools/gltfpack.exe"; // Meshopt
-    [Tooltip("Ex.: C:/Users/<voce>/AppData/Roaming/npm/gltf-transform.cmd OU .ps1")]
-    public string gltfTransformPath = @"C:\Users\wande\AppData\Roaming\npm\gltf-transform.cmd"; // Draco
 
     [Header("Scene")]
     public Transform spawnParent;
 
-    [System.Serializable]
-    public class ModelEntry
-    {
-        public string name = "Duck";        // pasta do modelo
-        public string fileName = "model.glb"; // nome do arquivo dentro de cada variante
-    }
-    public ModelEntry[] models = new ModelEntry[] {
-        new ModelEntry { name = "Duck", fileName = "model.glb" }
-    };
+    // ===== Descoberta dinâmica =====
+    private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
+    private readonly List<string> _modelNames = new(); // nomes (ex.: "Duck")
+    // mapeia: modelo -> (variante -> fileName.glb)
+    private readonly Dictionary<string, Dictionary<string, string>> _fileByModelVariant = new();
 
-    private readonly string[] _variants = new[] { "original", "draco", "meshopt" };
-    private GameObject _currentContainer;
+    // ===== Caminhos dos CLIs (mantenha como estão pra você) =====
+#if UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
+    private const string GLTF_TRANSFORM = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform";
+    private const string GLTFPACK      = "/usr/bin/gltfpack";
+#elif UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+    private const string GLTF_TRANSFORM = "C:\\Users\\wande\\AppData\\Roaming\\npm\\gltf-transform.cmd";
+    private static readonly string GLTFPACK = Path.Combine("Assets","Tools","gltfpack.exe");
+#else
+    private const string GLTF_TRANSFORM = "gltf-transform";
+    private const string GLTFPACK      = "gltfpack";
+#endif
+
+    private void SetStatus(string msg) => textStatus?.SetText(msg);
+
+    private GameObject _currentContainer; 
 
     void Awake()
     {
-        // Popular dropdowns
-        dropdownModel.ClearOptions();
-        dropdownModel.AddOptions(models.Select(m => m.name).ToList());
-        dropdownVariant.ClearOptions();
-        dropdownVariant.AddOptions(_variants.ToList());
+        ScanModelsAndPopulateUI();
 
         buttonLoad.onClick.AddListener(() => _ = OnClickLoadAsync());
-
-        // NOVO: listeners dos bot�es de compress�o
         if (buttonCompressDraco != null)
             buttonCompressDraco.onClick.AddListener(() => _ = OnClickCompressDracoAsync());
         if (buttonCompressMeshopt != null)
             buttonCompressMeshopt.onClick.AddListener(() => _ = OnClickCompressMeshoptAsync());
 
+        // quando trocar o modelo, recalcula as variantes disponíveis
+        dropdownModel.onValueChanged.AddListener(_ => PopulateVariantsForCurrentModel());
+
         SetStatus("Pronto.");
     }
 
-    private void SetStatus(string msg)
+    // ======== SCAN DINÂMICO ========
+
+    void ScanModelsAndPopulateUI()
     {
-        if (textStatus != null) textStatus.text = msg;
+        _modelNames.Clear();
+        _fileByModelVariant.Clear();
+
+        string modelsRoot = Path.Combine(UApp.streamingAssetsPath, "Models");
+        if (!Directory.Exists(modelsRoot))
+        {
+            UDebug.LogWarning($"Pasta não encontrada: {modelsRoot}");
+        }
+        else
+        {
+            foreach (var dir in Directory.GetDirectories(modelsRoot))
+            {
+                var modelName = Path.GetFileName(dir);
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var variant in _allKnownVariants)
+                {
+                    var vdir = Path.Combine(dir, variant);
+                    if (!Directory.Exists(vdir)) continue;
+
+                    // preferir "model.glb"; senão, pegar o primeiro *.glb
+                    string f = Path.Combine(vdir, "model.glb");
+                    if (!File.Exists(f))
+                    {
+                        var glbs = Directory.GetFiles(vdir, "*.glb");
+                        if (glbs.Length > 0)
+                        {
+                            // tenta priorizar algum arquivo com "model" no nome, senão pega o primeiro
+                            string candidate = glbs.FirstOrDefault(g => Path.GetFileName(g).Equals("model.glb", StringComparison.OrdinalIgnoreCase))
+                                             ?? glbs.FirstOrDefault(g => Path.GetFileName(g).Contains("model", StringComparison.OrdinalIgnoreCase))
+                                             ?? glbs[0];
+                            f = candidate;
+                        }
+                        else
+                        {
+                            continue; // sem .glb nessa variante
+                        }
+                    }
+
+                    // salvar APENAS o fileName relativo à pasta da variante
+                    map[variant] = Path.GetFileName(f);
+                }
+
+                // Inclui o modelo se tiver ao menos "original" (recomendado p/ compress)
+                if (map.Count > 0)
+                {
+                    _modelNames.Add(modelName);
+                    _fileByModelVariant[modelName] = map;
+                }
+            }
+        }
+
+        // Popular dropdown de modelos
+        dropdownModel.ClearOptions();
+        if (_modelNames.Count == 0)
+        {
+            dropdownModel.AddOptions(new List<string> { "(sem modelos)" });
+            dropdownModel.interactable = false;
+            dropdownVariant.ClearOptions();
+            dropdownVariant.AddOptions(new List<string> { "-" });
+            dropdownVariant.interactable = false;
+        }
+        else
+        {
+            dropdownModel.AddOptions(_modelNames);
+            dropdownModel.interactable = true;
+            PopulateVariantsForCurrentModel();
+        }
+    }
+
+    void PopulateVariantsForCurrentModel()
+    {
+        // Obtém o modelo atual e lista variantes disponíveis na ordem: original, draco, meshopt, (extras)
+        var modelName = GetSelectedModelName();
+        var variants = GetAvailableVariants(modelName);
+
+        dropdownVariant.ClearOptions();
+        dropdownVariant.AddOptions(variants);
+        dropdownVariant.interactable = variants.Count > 0;
+        if (variants.Count > 0) dropdownVariant.value = 0;
+        dropdownVariant.RefreshShownValue();
+    }
+
+    string GetSelectedModelName()
+    {
+        if (_modelNames.Count == 0) return null;
+        int idx = Mathf.Clamp(dropdownModel.value, 0, _modelNames.Count - 1);
+        return _modelNames[idx];
+    }
+
+    List<string> GetAvailableVariants(string modelName)
+    {
+        var list = new List<string>();
+        if (string.IsNullOrEmpty(modelName) || !_fileByModelVariant.TryGetValue(modelName, out var map) || map.Count == 0)
+            return list;
+
+        // ordem canônica
+        foreach (var v in _allKnownVariants)
+            if (map.ContainsKey(v)) list.Add(v);
+
+        // extras (se algum dia existirem)
+        foreach (var kv in map.Keys)
+            if (!list.Contains(kv)) list.Add(kv);
+
+        return list;
+    }
+
+    string GetFileNameFor(string modelName, string variant)
+    {
+        if (string.IsNullOrEmpty(modelName)) return null;
+        if (_fileByModelVariant.TryGetValue(modelName, out var map))
+        {
+            if (map.TryGetValue(variant, out var fn)) return fn;
+        }
+        return null;
     }
 
     private void ClearSpawn()
@@ -77,9 +192,16 @@ public class ModelViewer : MonoBehaviour
             Destroy(_currentContainer);
             _currentContainer = null;
         }
-        for (int i = spawnParent.childCount - 1; i >= 0; i--)
-            Destroy(spawnParent.GetChild(i).gameObject);
+
+        if (spawnParent != null)
+        {
+            for (int i = spawnParent.childCount - 1; i >= 0; i--)
+                Destroy(spawnParent.GetChild(i).gameObject);
+        }
     }
+
+
+    // ======== RUNTIME LOAD ========
 
     private async Task OnClickLoadAsync()
     {
@@ -88,14 +210,31 @@ public class ModelViewer : MonoBehaviour
 
         ClearSpawn();
 
-        var model = models[Mathf.Clamp(dropdownModel.value, 0, models.Length - 1)];
-        var variant = _variants[Mathf.Clamp(dropdownVariant.value, 0, _variants.Length - 1)];
+        var modelName = GetSelectedModelName();
+        var variants = GetAvailableVariants(modelName);
+        if (string.IsNullOrEmpty(modelName) || variants.Count == 0)
+        {
+            SetStatus("Nenhum modelo/variante disponível.");
+            buttonLoad.interactable = true;
+            return;
+        }
+
+        string variant = variants[Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1)];
+        string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
 
         string root = UApp.streamingAssetsPath;
-        string path = Path.Combine(root, "Models", model.name, variant, model.fileName);
+        string path = Path.Combine(root, "Models", modelName, variant, fileName);
+
+        if (!File.Exists(path))
+        {
+            SetStatus($"Arquivo não encontrado: {variant}/{fileName}. Gere a variante e tente de novo.");
+            buttonLoad.interactable = true;
+            return;
+        }
+
         string url = "file://" + path.Replace("\\", "/");
 
-        _currentContainer = new GameObject($"GLTF_{model.name}_{variant}");
+        _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
         _currentContainer.transform.SetParent(spawnParent, false);
 
         var gltf = _currentContainer.AddComponent<GltfAsset>();
@@ -107,78 +246,89 @@ public class ModelViewer : MonoBehaviour
 
         if (!ok)
         {
-            SetStatus($"Falha ao carregar: {model.name}/{variant}");
+            SetStatus($"Falha ao carregar: {modelName}/{variant}");
             ClearSpawn();
         }
         else
         {
-            SetStatus($"Carregado: {model.name} ({variant})");
+            SetStatus($"Carregado: {modelName} ({variant})");
         }
 
         buttonLoad.interactable = true;
     }
 
-    // =========================
-    //  COMPRESS�O (CLI)
-    // =========================
-
     private (string inputOriginal, string outDraco, string outMeshopt) GetCurrentPaths()
     {
-        var model = models[Mathf.Clamp(dropdownModel.value, 0, models.Length - 1)];
+        var modelName = GetSelectedModelName();
         string root = UApp.streamingAssetsPath;
 
-        string original = Path.Combine(root, "Models", model.name, "original", model.fileName);
-        string outDraco = Path.Combine(root, "Models", model.name, "draco", model.fileName);
-        string outMesh = Path.Combine(root, "Models", model.name, "meshopt", model.fileName);
+        // fileName base = o do "original" (se existir), senão "model.glb"
+        string baseOriginal = GetFileNameFor(modelName, "original") ?? "model.glb";
+        string baseDraco    = GetFileNameFor(modelName, "draco")    ?? baseOriginal;
+        string baseMesh     = GetFileNameFor(modelName, "meshopt")  ?? baseOriginal;
+
+        string original = Path.Combine(root, "Models", modelName, "original", baseOriginal);
+        string outDraco = Path.Combine(root, "Models", modelName, "draco",    baseDraco);
+        string outMesh  = Path.Combine(root, "Models", modelName, "meshopt",  baseMesh);
         return (original, outDraco, outMesh);
     }
 
-    private (string file, string args) WrapIfNeeded(string exe, string args)
-    {
-        // Aceita .exe/.cmd/.bat/.ps1
-        var ext = Path.GetExtension(exe).ToLowerInvariant();
-        if (ext == ".ps1") return ("powershell.exe", $"-ExecutionPolicy Bypass -File \"{exe}\" {args}");
-        if (ext == ".cmd" || ext == ".bat") return ("cmd.exe", $"/c \"\"{exe}\" {args}\"");
-        return (exe, args); // .exe ou nome no PATH
-    }
+    // ======== EXEC CLI ========
 
     private Task<int> RunProcessAsync(string file, string args)
     {
         var tcs = new TaskCompletionSource<int>();
         var psi = new Diagnostics.ProcessStartInfo(file, args)
         {
-            UseShellExecute = false,
+            UseShellExecute        = false,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            WorkingDirectory = Directory.GetCurrentDirectory()
+            RedirectStandardError  = true,
+            CreateNoWindow         = true
         };
+
         var p = new Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
         p.Exited += (s, e) =>
         {
-            int code = p.ExitCode;
-            string stdout = p.StandardOutput.ReadToEnd();
-            string stderr = p.StandardError.ReadToEnd();
-            if (code == 0) UDebug.Log(stdout); else UDebug.LogError(stderr);
-            p.Dispose();
-            tcs.TrySetResult(code);
+            try
+            {
+                int code = p.ExitCode;
+                string so = p.StandardOutput.ReadToEnd();
+                string se = p.StandardError.ReadToEnd();
+                if (code == 0) UDebug.Log(so); else UDebug.LogError(se);
+                tcs.TrySetResult(code);
+            }
+            catch (Exception ex) { UDebug.LogError(ex); tcs.TrySetResult(-1); }
+            finally { p.Dispose(); }
         };
-        try { p.Start(); } catch (System.Exception ex) { UDebug.LogError(ex); tcs.TrySetResult(-1); }
+
+        try
+        {
+            UDebug.Log($"[Exec] {file} {args}");
+            p.Start();
+        }
+        catch (Exception ex) { UDebug.LogError(ex); tcs.TrySetResult(-1); }
+
         return tcs.Task;
     }
 
     private async Task<bool> CompressMeshoptAsync(string input, string output)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output));
-        var (file, args) = WrapIfNeeded(gltfpackPath, $"-i \"{input}\" -o \"{output}\" -cc");
-        int code = await RunProcessAsync(file, args);
+        string args = $"-i \"{input}\" -o \"{output}\" -cc";
+        int code = await RunProcessAsync(GLTFPACK, args);
         return code == 0;
     }
 
     private async Task<bool> CompressDracoAsync(string input, string output)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output));
-        var (file, args) = WrapIfNeeded(gltfTransformPath, $"optimize \"{input}\" \"{output}\" --compress draco");
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        string file = "cmd.exe";
+        string args = $"/c \"{GLTF_TRANSFORM}\" optimize \"{input}\" \"{output}\" --compress draco";
+#else
+        string file = GLTF_TRANSFORM;
+        string args = $"optimize \"{input}\" \"{output}\" --compress draco";
+#endif
         int code = await RunProcessAsync(file, args);
         return code == 0;
     }
@@ -186,36 +336,55 @@ public class ModelViewer : MonoBehaviour
     private async Task OnClickCompressMeshoptAsync()
     {
         if (buttonCompressMeshopt) buttonCompressMeshopt.interactable = false;
-        var (original, _, outMesh) = GetCurrentPaths();
+        SetStatus("Compactando com Meshopt...");
 
+        var (original, _, outMesh) = GetCurrentPaths();
         if (!File.Exists(original))
         {
-            SetStatus("N�o achei o original. Verifique a pasta original/model.glb");
+            SetStatus("Não achei o original. Coloque em original/model.glb (ou qualquer .glb).");
             if (buttonCompressMeshopt) buttonCompressMeshopt.interactable = true;
             return;
         }
 
-        SetStatus("Comprimindo (Meshopt)...");
         bool ok = await CompressMeshoptAsync(original, outMesh);
-        SetStatus(ok ? "Meshopt OK" : "Meshopt FAIL (veja Console)");
+        // registra o arquivo no mapa (para aparecer no dropdown)
+        RegisterVariantFile(GetSelectedModelName(), "meshopt", Path.GetFileName(outMesh));
+        PopulateVariantsForCurrentModel();
+
+        SetStatus(ok ? "Meshopt: OK" : "Meshopt: falhou");
         if (buttonCompressMeshopt) buttonCompressMeshopt.interactable = true;
     }
 
     private async Task OnClickCompressDracoAsync()
     {
         if (buttonCompressDraco) buttonCompressDraco.interactable = false;
-        var (original, outDraco, _) = GetCurrentPaths();
+        SetStatus("Compactando com Draco...");
 
+        var (original, outDraco, _) = GetCurrentPaths();
         if (!File.Exists(original))
         {
-            SetStatus("N�o achei o original. Verifique a pasta original/model.glb");
+            SetStatus("Não achei o original. Coloque em original/model.glb (ou qualquer .glb).");
             if (buttonCompressDraco) buttonCompressDraco.interactable = true;
             return;
         }
 
-        SetStatus("Comprimindo (Draco)...");
         bool ok = await CompressDracoAsync(original, outDraco);
-        SetStatus(ok ? "Draco OK" : "Draco FAIL (veja Console)");
+        // registra o arquivo no mapa (para aparecer no dropdown)
+        RegisterVariantFile(GetSelectedModelName(), "draco", Path.GetFileName(outDraco));
+        PopulateVariantsForCurrentModel();
+
+        SetStatus(ok ? "Draco: OK" : "Draco: falhou");
         if (buttonCompressDraco) buttonCompressDraco.interactable = true;
+    }
+
+    void RegisterVariantFile(string modelName, string variant, string fileName)
+    {
+        if (string.IsNullOrEmpty(modelName) || string.IsNullOrEmpty(variant) || string.IsNullOrEmpty(fileName)) return;
+        if (!_fileByModelVariant.TryGetValue(modelName, out var map))
+        {
+            map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _fileByModelVariant[modelName] = map;
+        }
+        map[variant] = fileName;
     }
 }

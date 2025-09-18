@@ -586,8 +586,8 @@ MonoBehaviour:
   textStatus: {fileID: 946232158}
   buttonCompressDraco: {fileID: 1449272496}
   buttonCompressMeshopt: {fileID: 1337721515}
-  gltfpackPath: Assets/Tools/gltfpack.exe
-  gltfTransformPath: C:\Users\wande\AppData\Roaming\npm\gltf-transform.cmd
+  gltfpackPath: /usr/bin/gltfpack
+  gltfTransformPath: /home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform
   spawnParent: {fileID: 2115339638}
   models:
   - name: Duck
