@@ -206,55 +206,70 @@ public class ModelViewer : MonoBehaviour
     private async Task OnClickLoadAsync()
     {
         buttonLoad.interactable = false;
-        SetStatus("Carregando...");
-
-        ClearSpawn();
-
-        var modelName = GetSelectedModelName();
-        var variants = GetAvailableVariants(modelName);
-        if (string.IsNullOrEmpty(modelName) || variants.Count == 0)
+        try
         {
-            SetStatus("Nenhum modelo/variante disponível.");
-            buttonLoad.interactable = true;
-            return;
-        }
-
-        string variant = variants[Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1)];
-        string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
-
-        string root = UApp.streamingAssetsPath;
-        string path = Path.Combine(root, "Models", modelName, variant, fileName);
-
-        if (!File.Exists(path))
-        {
-            SetStatus($"Arquivo não encontrado: {variant}/{fileName}. Gere a variante e tente de novo.");
-            buttonLoad.interactable = true;
-            return;
-        }
-
-        string url = "file://" + path.Replace("\\", "/");
-
-        _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
-        _currentContainer.transform.SetParent(spawnParent, false);
-
-        var gltf = _currentContainer.AddComponent<GltfAsset>();
-        gltf.LoadOnStartup = false;
-
-        bool ok = false;
-        try { ok = await gltf.Load(url); }
-        catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
-
-        if (!ok)
-        {
-            SetStatus($"Falha ao carregar: {modelName}/{variant}");
+            SetStatus("Carregando...");
             ClearSpawn();
-        }
-        else
-        {
-            SetStatus($"Carregado: {modelName} ({variant})");
-        }
 
-        buttonLoad.interactable = true;
+            var modelName = GetSelectedModelName();
+            var variants  = GetAvailableVariants(modelName);
+            if (string.IsNullOrEmpty(modelName) || variants.Count == 0)
+            {
+                SetStatus("Nenhum modelo/variante disponível.");
+                return;
+            }
+
+            string variant  = variants[Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1)];
+            string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
+
+            string root = UApp.streamingAssetsPath;
+            string path = Path.Combine(root, "Models", modelName, variant, fileName);
+            if (!File.Exists(path))
+            {
+                SetStatus($"Arquivo não encontrado: {variant}/{fileName}.");
+                return;
+            }
+
+            string url = "file://" + path.Replace("\\", "/");
+
+            Metrics.Instance?.BeginLoad(modelName, variant, path);
+
+            _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
+            _currentContainer.transform.SetParent(spawnParent, false);
+
+            var gltf = _currentContainer.AddComponent<GltfAsset>();
+            gltf.LoadOnStartup = false;
+
+            bool ok = false;
+            try { ok = await gltf.Load(url); }
+            catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
+
+            if (Metrics.Instance != null) await Metrics.Instance.EndLoad(ok);
+
+            if (!ok)
+            {
+                SetStatus($"Falha ao carregar: {modelName}/{variant}");
+                ClearSpawn();
+                return;
+            }
+
+            // ✅ Reabilita o botão já aqui
+            buttonLoad.interactable = true;
+            SetStatus($"Carregado: {modelName} ({variant}) — medindo FPS...");
+
+            // Métricas (não mexem no botão)
+            if (Metrics.Instance != null)
+            {
+                await Metrics.Instance.MeasureFpsWindow(Metrics.Instance.fpsWindowSeconds);
+                Metrics.Instance.WriteCsv();
+                SetStatus($"Carregado: {modelName} ({variant}) — métricas salvas.");
+            }
+        }
+        finally
+        {
+            // ✅ Garantia extra (em caso de erro/return antecipado)
+            buttonLoad.interactable = true;
+        }
     }
 
     private (string inputOriginal, string outDraco, string outMeshopt) GetCurrentPaths()
