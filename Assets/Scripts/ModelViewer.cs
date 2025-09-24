@@ -25,6 +25,9 @@ public class ModelViewer : MonoBehaviour
 
     [Header("Scene")]
     public Transform spawnParent;
+    
+    [Header("Refs")]
+    public HUDController hudController; // referência para notificar sobre carregamentos
 
     // ===== Descoberta dinâmica =====
     private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
@@ -271,7 +274,13 @@ public class ModelViewer : MonoBehaviour
             }
             else
             {
-                SetStatus($"Carregado: {modelName} ({variant})");
+                SetStatus($"{modelName} ({variant})");
+            }
+
+            // Notifica o HUDController sobre o modelo carregado
+            if (ok && hudController != null)
+            {
+                hudController.NotifyModelLoaded(modelName, variant);
             }
 
             buttonLoad.interactable = true;
@@ -562,4 +571,178 @@ public class ModelViewer : MonoBehaviour
         result.Add(currentField); // adicionar último campo
         return result.ToArray();
     }
+
+    // ======== MÉTODOS PÚBLICOS PARA WIZARD ========
+
+    // Permite outro script pedir um re-scan
+    public void RescanModels() => ScanModelsAndPopulateUI();
+
+    // Expor nome e variantes do modelo atual/qualquer
+    public string GetSelectedModelNamePublic() => GetSelectedModelName();
+    public System.Collections.Generic.List<string> GetAvailableVariantsPublic(string modelName) => GetAvailableVariants(modelName);
+
+    // Carrega sem mexer no estado da UI (usado pelo wizard)
+    public async Task<bool> LoadAsync(string modelName, string variant)
+    {
+        // Reuso da lógica do OnClickLoadAsync, mas sem mexer em dropdowns/botão
+        string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
+        string root = UApp.streamingAssetsPath;
+        string path = System.IO.Path.Combine(root, "Models", modelName, variant, fileName);
+        if (!System.IO.File.Exists(path))
+            return false;
+
+        // begin metrics
+        Metrics.Instance?.BeginLoad(modelName, variant, path);
+
+        // limpar anterior
+        ClearSpawn();
+
+        _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
+        _currentContainer.transform.SetParent(spawnParent, false);
+
+        var gltf = _currentContainer.AddComponent<GltfAsset>();
+        gltf.LoadOnStartup = false;
+
+        string url = "file://" + path.Replace("\\", "/");
+        bool ok = false;
+        try { ok = await gltf.Load(url); }
+        catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
+
+        if (Metrics.Instance != null) await Metrics.Instance.EndLoad(ok);
+
+        if (!ok)
+        {
+            ClearSpawn();
+            return false;
+        }
+
+        // mede FPS + upsert CSV
+        if (Metrics.Instance != null)
+        {
+            await Metrics.Instance.MeasureFpsWindow(Metrics.Instance.fpsWindowSeconds);
+            Metrics.Instance.WriteCsv(); // (com upsert, ver patch abaixo)
+        }
+        return true;
+    }
+
+    // Compressão "dos dois" para um modelo (usado pelo wizard)
+    public async Task<bool> CompressBothAsyncFor(string modelName)
+    {
+        string root = UApp.streamingAssetsPath;
+        string baseOriginal = GetFileNameFor(modelName, "original") ?? "model.glb";
+        string original = System.IO.Path.Combine(root, "Models", modelName, "original", baseOriginal);
+        string outDraco = System.IO.Path.Combine(root, "Models", modelName, "draco",    baseOriginal);
+        string outMesh  = System.IO.Path.Combine(root, "Models", modelName, "meshopt",  baseOriginal);
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(outDraco));
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(outMesh));
+
+        bool ok1 = await CompressDracoAsync(original, outDraco);
+        bool ok2 = await CompressMeshoptAsync(original, outMesh);
+
+        // registra para aparecer nas variantes sem reabrir a cena
+        if (ok1) RegisterVariantFile(modelName, "draco", System.IO.Path.GetFileName(outDraco));
+        if (ok2) RegisterVariantFile(modelName, "meshopt", System.IO.Path.GetFileName(outMesh));
+        return ok1 && ok2;
+    }
+
+    // Verifica se um modelo já existe
+    public bool ModelExists(string modelName)
+    {
+        if (string.IsNullOrEmpty(modelName)) return false;
+        return _fileByModelVariant.ContainsKey(modelName);
+    }
+
+    // Verifica se um modelo já tem variantes comprimidas
+    public bool HasCompressedVariants(string modelName)
+    {
+        if (string.IsNullOrEmpty(modelName) || !_fileByModelVariant.TryGetValue(modelName, out var map))
+            return false;
+        
+        return map.ContainsKey("draco") || map.ContainsKey("meshopt");
+    }
+
+    // Retorna lista de todos os modelos disponíveis
+    public System.Collections.Generic.List<string> GetAllAvailableModels()
+    {
+        return new System.Collections.Generic.List<string>(_modelNames);
+    }
+
+    // Retorna o modelo atualmente selecionado no dropdown
+    public string GetCurrentSelectedModel()
+    {
+        return GetSelectedModelName();
+    }
+
+    // Retorna a variante atualmente selecionada no dropdown
+    public string GetCurrentSelectedVariant()
+    {
+        var modelName = GetSelectedModelName();
+        if (string.IsNullOrEmpty(modelName)) return null;
+        
+        var variants = GetAvailableVariants(modelName);
+        if (variants.Count == 0) return null;
+        
+        int idx = Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1);
+        return variants[idx];
+    }
+
+    // Define o modelo selecionado programaticamente
+    public void SetSelectedModel(string modelName)
+    {
+        if (string.IsNullOrEmpty(modelName)) return;
+        
+        int index = _modelNames.IndexOf(modelName);
+        if (index >= 0)
+        {
+            dropdownModel.value = index;
+            PopulateVariantsForCurrentModel();
+        }
+    }
+
+    // Define a variante selecionada programaticamente
+    public void SetSelectedVariant(string variantName)
+    {
+        if (string.IsNullOrEmpty(variantName)) return;
+        
+        var modelName = GetSelectedModelName();
+        if (string.IsNullOrEmpty(modelName)) return;
+        
+        var variants = GetAvailableVariants(modelName);
+        int index = variants.IndexOf(variantName);
+        if (index >= 0)
+        {
+            dropdownVariant.value = index;
+            dropdownVariant.RefreshShownValue();
+        }
+    }
+
+    public string ResolvePath(string modelName, string variant)
+    {
+        string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
+        return System.IO.Path.Combine(UApp.streamingAssetsPath, "Models", modelName, variant, fileName);
+    }
+
+    // Carrega o modelo sem rodar métricas (o Wizard cuida das métricas)
+    public async Task<bool> LoadOnlyAsync(string modelName, string variant)
+    {
+        string path = ResolvePath(modelName, variant);
+        if (!System.IO.File.Exists(path)) return false;
+
+        ClearSpawn();
+
+        _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
+        _currentContainer.transform.SetParent(spawnParent, false);
+
+        var gltf = _currentContainer.AddComponent<GltfAsset>();
+        gltf.LoadOnStartup = false;
+
+        string url = "file://" + path.Replace("\\", "/");
+        bool ok = false;
+        try { ok = await gltf.Load(url); }
+        catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
+
+        if (!ok) ClearSpawn();
+        return ok;
+    }
+
 }

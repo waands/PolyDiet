@@ -19,8 +19,9 @@ public class Metrics : MonoBehaviour
     public float fpsWindowSeconds = 5f;
 
     [Header("Output")]
-    public bool saveInsideProject = true;      // <- marque no Editor p/ salvar no projeto
-    public string projectSubDir   = "Benchmarks"; // vira <raiz-do-projeto>/Benchmarks
+    public bool saveInsideProject = true;
+    public string projectSubDir   = "Benchmarks";
+    public bool upsertBySceneModelVariant = true; // <- NOVO
 
 
     [Tooltip("Nome do arquivo CSV (será salvo em persistentDataPath/Benchmarks/).")]
@@ -51,20 +52,10 @@ public class Metrics : MonoBehaviour
     {
         if (saveInsideProject)
         {
-            // raiz do projeto (irmã da pasta Assets)
-            var projectRoot = System.IO.Directory.GetParent(Application.dataPath)!.FullName;
-            var outputDir = System.IO.Path.Combine(projectRoot, projectSubDir);
-            
-            // Debug para Windows
-            UnityEngine.Debug.Log($"[Metrics] Project root: {projectRoot}");
-            UnityEngine.Debug.Log($"[Metrics] Output dir: {outputDir}");
-            
-            return outputDir;
+            var projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
+            return Path.Combine(projectRoot, projectSubDir);
         }
-        // fallback multiplataforma (recomendado para builds)
-        var persistentDir = System.IO.Path.Combine(Application.persistentDataPath, "Benchmarks");
-        UnityEngine.Debug.Log($"[Metrics] Persistent dir: {persistentDir}");
-        return persistentDir;
+        return Path.Combine(Application.persistentDataPath, "Benchmarks");
     }
 
 
@@ -128,69 +119,68 @@ public class Metrics : MonoBehaviour
 
     public void WriteCsv()
     {
-        try
+        var dir  = GetOutputDir();
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, csvFileName);
+
+        string ts       = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+        string platform = Application.platform.ToString();
+        string unityVer = Application.unityVersion;
+        string scene    = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+
+        string header = "timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok";
+        string newline = string.Join(",",
+            ts,
+            Safe(platform),
+            Safe(unityVer),
+            Safe(scene),
+            Safe(_modelName),
+            Safe(_variant),
+            _fileMB.ToString("0.###", CultureInfo.InvariantCulture),
+            _loadMs.ToString("0.###", CultureInfo.InvariantCulture),
+            _memMB.ToString("0.###", CultureInfo.InvariantCulture),
+            _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
+            _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
+            _lastLoadOk ? "true" : "false"
+        );
+
+        if (!upsertBySceneModelVariant)
         {
-            var dir = GetOutputDir();
-            UnityEngine.Debug.Log($"[Metrics] Criando diretório: {dir}");
-            System.IO.Directory.CreateDirectory(dir);
-            
-            var path = System.IO.Path.Combine(dir, csvFileName);
-            UnityEngine.Debug.Log($"[Metrics] Caminho do CSV: {path}");
+            bool writeHeader = !File.Exists(path);
+            using var sw = new StreamWriter(path, append: true);
+            if (writeHeader) sw.WriteLine(header);
+            sw.WriteLine(newline);
+            UnityEngine.Debug.Log($"[Metrics] CSV salvo: {path}");
+            return;
+        }
 
-            bool writeHeader = !System.IO.File.Exists(path);
-            UnityEngine.Debug.Log($"[Metrics] Arquivo existe: {!writeHeader}, Escrevendo header: {writeHeader}");
+        // === UPSERT: substitui linhas com mesmo (scene, model, variant) ===
+        var pattern = "," + Safe(scene) + "," + Safe(_modelName) + "," + Safe(_variant) + ",";
+        string[] lines = File.Exists(path) ? File.ReadAllLines(path) : Array.Empty<string>();
 
-            // 'using' precisa ABRANGER a escrita TODA:
-            using (var sw = new System.IO.StreamWriter(path, append: true))
+        using (var sw = new StreamWriter(path, append: false))
+        {
+            if (lines.Length == 0 || (lines.Length > 0 && lines[0] != header))
+                sw.WriteLine(header);
+
+            bool replaced = false;
+            for (int i = 0; i < lines.Length; i++)
             {
-                if (writeHeader)
+                if (i == 0 && lines[i] == header) continue; // pula cabeçalho antigo, já escrevemos
+                var line = lines[i];
+                if (!replaced && line.Contains(pattern, StringComparison.Ordinal))
                 {
-                    sw.WriteLine("timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok");
-                    UnityEngine.Debug.Log("[Metrics] Header escrito");
+                    sw.WriteLine(newline);
+                    replaced = true;
                 }
-
-                string ts = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
-                string platform = Application.platform.ToString();
-                string unityVer = Application.unityVersion;
-                string scene = SceneManager.GetActiveScene().name;
-
-                string csvLine = string.Join(",",
-                    ts,
-                    Safe(platform),
-                    Safe(unityVer),
-                    Safe(scene),
-                    Safe(_modelName),
-                    Safe(_variant),
-                    _fileMB.ToString("0.###", CultureInfo.InvariantCulture),
-                    _loadMs.ToString("0.###", CultureInfo.InvariantCulture),
-                    _memMB.ToString("0.###", CultureInfo.InvariantCulture),
-                    _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
-                    _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
-                    _lastLoadOk ? "true" : "false"
-                );
-
-                UnityEngine.Debug.Log($"[Metrics] Linha CSV: {csvLine}");
-                sw.WriteLine(csvLine);
-                sw.Flush(); // garantir que foi escrito
+                else
+                {
+                    sw.WriteLine(line);
+                }
             }
-
-            UnityEngine.Debug.Log($"[Metrics] CSV salvo com sucesso: {path}");
-            
-            // Verificar se o arquivo foi realmente criado
-            if (System.IO.File.Exists(path))
-            {
-                var fileInfo = new System.IO.FileInfo(path);
-                UnityEngine.Debug.Log($"[Metrics] Arquivo confirmado - Tamanho: {fileInfo.Length} bytes");
-            }
-            else
-            {
-                UnityEngine.Debug.LogError($"[Metrics] ERRO: Arquivo não foi criado em {path}");
-            }
+            if (!replaced) sw.WriteLine(newline);
         }
-        catch (System.Exception ex)
-        {
-            UnityEngine.Debug.LogError($"[Metrics] Erro ao escrever CSV: {ex.Message}\n{ex.StackTrace}");
-        }
+        UnityEngine.Debug.Log($"[Metrics] CSV salvo: {path}");
     }
 
     // =============== Utils ===============
@@ -210,4 +200,33 @@ public class Metrics : MonoBehaviour
         // sem vírgulas; CSV usa vírgula como separador
         return "\"" + s.Replace("\"", "''") + "\"";
     }
+
+    public async Task MeasureFpsWindowWithCallback(float seconds, Action<float> onTick)
+    {
+        _frameDt.Clear();
+        if (!_lastLoadOk || seconds <= 0.05f) return;
+
+        float t = 0f;
+        while (t < seconds)
+        {
+            await Task.Yield();
+            float dt = Time.unscaledDeltaTime;
+            if (dt > 0f && dt < 1f) _frameDt.Add(dt);
+            t += dt;
+
+            onTick?.Invoke(Mathf.Max(0f, seconds - t));
+        }
+
+        if (_frameDt.Count > 0)
+        {
+            var fps = _frameDt.Select(d => 1f / d).ToArray();
+            _fpsAvg = fps.Average();
+
+            Array.Sort(fps);
+            int n = fps.Length;
+            int idx = Mathf.Clamp(Mathf.FloorToInt(n * 0.01f) - 1, 0, n - 1); // 1% low
+            _fpsP01 = fps[idx];
+        }
+    }
+
 }
