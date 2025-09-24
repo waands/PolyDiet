@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
-using System.Collections.Generic; // <— novo
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using Diagnostics = System.Diagnostics;
@@ -28,25 +28,23 @@ public class ModelViewer : MonoBehaviour
 
     // ===== Descoberta dinâmica =====
     private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
-    private readonly List<string> _modelNames = new(); // nomes (ex.: "Duck")
-    // mapeia: modelo -> (variante -> fileName.glb)
+    private readonly List<string> _modelNames = new();
     private readonly Dictionary<string, Dictionary<string, string>> _fileByModelVariant = new();
 
-    // ===== Caminhos dos CLIs (mantenha como estão pra você) =====
+    // ===== Caminhos dos CLIs =====
 #if UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-    private const string GLTF_TRANSFORM = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform";
-    private const string GLTFPACK      = "/usr/bin/gltfpack";
+    private const string GLTF_TRANSFORM_LINUX = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform";
+    private const string GLTFPACK_LINUX      = "/usr/bin/gltfpack";
 #elif UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-    private const string GLTF_TRANSFORM = "C:\\Users\\wande\\AppData\\Roaming\\npm\\gltf-transform.cmd";
-    private static readonly string GLTFPACK = Path.Combine("Assets","Tools","gltfpack.exe");
+    private const string GLTF_TRANSFORM_WIN_CMD = @"%APPDATA%\npm\gltf-transform.cmd"; // chamado via cmd.exe /c
 #else
-    private const string GLTF_TRANSFORM = "gltf-transform";
-    private const string GLTFPACK      = "gltfpack";
+    private const string GLTF_TRANSFORM_FALLBACK = "gltf-transform";
+    private const string GLTFPACK_FALLBACK = "gltfpack";
 #endif
 
-    private void SetStatus(string msg) => textStatus?.SetText(msg);
+    private GameObject _currentContainer;
 
-    private GameObject _currentContainer; 
+    private void SetStatus(string msg) => textStatus?.SetText(msg);
 
     void Awake()
     {
@@ -95,7 +93,6 @@ public class ModelViewer : MonoBehaviour
                         var glbs = Directory.GetFiles(vdir, "*.glb");
                         if (glbs.Length > 0)
                         {
-                            // tenta priorizar algum arquivo com "model" no nome, senão pega o primeiro
                             string candidate = glbs.FirstOrDefault(g => Path.GetFileName(g).Equals("model.glb", StringComparison.OrdinalIgnoreCase))
                                              ?? glbs.FirstOrDefault(g => Path.GetFileName(g).Contains("model", StringComparison.OrdinalIgnoreCase))
                                              ?? glbs[0];
@@ -107,11 +104,9 @@ public class ModelViewer : MonoBehaviour
                         }
                     }
 
-                    // salvar APENAS o fileName relativo à pasta da variante
                     map[variant] = Path.GetFileName(f);
                 }
 
-                // Inclui o modelo se tiver ao menos "original" (recomendado p/ compress)
                 if (map.Count > 0)
                 {
                     _modelNames.Add(modelName);
@@ -140,7 +135,6 @@ public class ModelViewer : MonoBehaviour
 
     void PopulateVariantsForCurrentModel()
     {
-        // Obtém o modelo atual e lista variantes disponíveis na ordem: original, draco, meshopt, (extras)
         var modelName = GetSelectedModelName();
         var variants = GetAvailableVariants(modelName);
 
@@ -164,11 +158,9 @@ public class ModelViewer : MonoBehaviour
         if (string.IsNullOrEmpty(modelName) || !_fileByModelVariant.TryGetValue(modelName, out var map) || map.Count == 0)
             return list;
 
-        // ordem canônica
         foreach (var v in _allKnownVariants)
             if (map.ContainsKey(v)) list.Add(v);
 
-        // extras (se algum dia existirem)
         foreach (var kv in map.Keys)
             if (!list.Contains(kv)) list.Add(kv);
 
@@ -200,7 +192,6 @@ public class ModelViewer : MonoBehaviour
         }
     }
 
-
     // ======== RUNTIME LOAD ========
 
     private async Task OnClickLoadAsync()
@@ -212,14 +203,14 @@ public class ModelViewer : MonoBehaviour
             ClearSpawn();
 
             var modelName = GetSelectedModelName();
-            var variants  = GetAvailableVariants(modelName);
+            var variants = GetAvailableVariants(modelName);
             if (string.IsNullOrEmpty(modelName) || variants.Count == 0)
             {
                 SetStatus("Nenhum modelo/variante disponível.");
                 return;
             }
 
-            string variant  = variants[Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1)];
+            string variant = variants[Mathf.Clamp(dropdownVariant.value, 0, variants.Count - 1)];
             string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
 
             string root = UApp.streamingAssetsPath;
@@ -232,7 +223,11 @@ public class ModelViewer : MonoBehaviour
 
             string url = "file://" + path.Replace("\\", "/");
 
-            Metrics.Instance?.BeginLoad(modelName, variant, path);
+            // Iniciar medição de métricas
+            if (Metrics.Instance != null)
+            {
+                Metrics.Instance.BeginLoad(modelName, variant, path);
+            }
 
             _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
             _currentContainer.transform.SetParent(spawnParent, false);
@@ -244,7 +239,11 @@ public class ModelViewer : MonoBehaviour
             try { ok = await gltf.Load(url); }
             catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
 
-            if (Metrics.Instance != null) await Metrics.Instance.EndLoad(ok);
+            // Finalizar medição de carregamento
+            if (Metrics.Instance != null)
+            {
+                await Metrics.Instance.EndLoad(ok);
+            }
 
             if (!ok)
             {
@@ -253,21 +252,32 @@ public class ModelViewer : MonoBehaviour
                 return;
             }
 
-            // ✅ Reabilita o botão já aqui
-            buttonLoad.interactable = true;
-            SetStatus($"Carregado: {modelName} ({variant}) — medindo FPS...");
-
-            // Métricas (não mexem no botão)
-            if (Metrics.Instance != null)
+            // Medir FPS após carregamento bem-sucedido
+            if (Metrics.Instance != null && ok)
             {
+                SetStatus("Medindo performance...");
                 await Metrics.Instance.MeasureFpsWindow(Metrics.Instance.fpsWindowSeconds);
+                
+                // Verificar se já existe uma entrada similar e perguntar se quer sobrescrever
+                if (ShouldAskToOverwrite(modelName, variant))
+                {
+                    SetStatus($"Modelo {modelName} ({variant}) já foi testado. Sobrescrever? (Y/N)");
+                    // Por enquanto, vamos sempre sobrescrever. Em uma implementação completa,
+                    // você poderia mostrar um diálogo de confirmação aqui.
+                }
+                
                 Metrics.Instance.WriteCsv();
-                SetStatus($"Carregado: {modelName} ({variant}) — métricas salvas.");
+                SetStatus($"Carregado e medido: {modelName} ({variant})");
             }
+            else
+            {
+                SetStatus($"Carregado: {modelName} ({variant})");
+            }
+
+            buttonLoad.interactable = true;
         }
         finally
         {
-            // ✅ Garantia extra (em caso de erro/return antecipado)
             buttonLoad.interactable = true;
         }
     }
@@ -277,28 +287,57 @@ public class ModelViewer : MonoBehaviour
         var modelName = GetSelectedModelName();
         string root = UApp.streamingAssetsPath;
 
-        // fileName base = o do "original" (se existir), senão "model.glb"
         string baseOriginal = GetFileNameFor(modelName, "original") ?? "model.glb";
-        string baseDraco    = GetFileNameFor(modelName, "draco")    ?? baseOriginal;
-        string baseMesh     = GetFileNameFor(modelName, "meshopt")  ?? baseOriginal;
+        string baseDraco = GetFileNameFor(modelName, "draco") ?? baseOriginal;
+        string baseMesh = GetFileNameFor(modelName, "meshopt") ?? baseOriginal;
 
         string original = Path.Combine(root, "Models", modelName, "original", baseOriginal);
-        string outDraco = Path.Combine(root, "Models", modelName, "draco",    baseDraco);
-        string outMesh  = Path.Combine(root, "Models", modelName, "meshopt",  baseMesh);
+        string outDraco = Path.Combine(root, "Models", modelName, "draco", baseDraco);
+        string outMesh = Path.Combine(root, "Models", modelName, "meshopt", baseMesh);
         return (original, outDraco, outMesh);
     }
 
     // ======== EXEC CLI ========
 
+    // helper de aspas
+    private static string Q(string s) => $"\"{s}\"";
+
+    // Resolve caminho absoluto e WorkingDirectory (pasta do executável, se absoluto)
+    private static (string absExe, string workingDir) ResolveExe(string exe)
+    {
+        // Se for relativo dentro do projeto (ex.: Assets/StreamingAssets/Tools/gltfpack.exe),
+        // promova para absoluto a partir de Application.dataPath quando começar com "Assets".
+        if (!Path.IsPathRooted(exe))
+        {
+            if (exe.StartsWith("Assets", StringComparison.OrdinalIgnoreCase))
+            {
+                // Assets/... -> <Projeto>/Assets/...
+                string projRoot = Directory.GetParent(UApp.dataPath)!.FullName;
+                string abs = Path.Combine(projRoot, exe.Replace('/', Path.DirectorySeparatorChar));
+                return (abs, Path.GetDirectoryName(abs) ?? Directory.GetCurrentDirectory());
+            }
+            // Se for um nome simples (no PATH), devolve sem WorkingDirectory específico
+            return (exe, Directory.GetCurrentDirectory());
+        }
+        else
+        {
+            return (exe, Path.GetDirectoryName(exe) ?? Directory.GetCurrentDirectory());
+        }
+    }
+
     private Task<int> RunProcessAsync(string file, string args)
     {
         var tcs = new TaskCompletionSource<int>();
-        var psi = new Diagnostics.ProcessStartInfo(file, args)
+
+        var (absExe, wd) = ResolveExe(file);
+
+        var psi = new Diagnostics.ProcessStartInfo(absExe, args)
         {
-            UseShellExecute        = false,
+            UseShellExecute = false,
             RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            CreateNoWindow         = true
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = wd
         };
 
         var p = new Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -318,7 +357,7 @@ public class ModelViewer : MonoBehaviour
 
         try
         {
-            UDebug.Log($"[Exec] {file} {args}");
+            UDebug.Log($"[Exec] {absExe} {args}\n[WD] {wd}");
             p.Start();
         }
         catch (Exception ex) { UDebug.LogError(ex); tcs.TrySetResult(-1); }
@@ -326,27 +365,74 @@ public class ModelViewer : MonoBehaviour
         return tcs.Task;
     }
 
+    // Caminho absoluto do gltfpack dentro do projeto (Windows)
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+    private static string GetGltfpackExeWin()
+    {
+        // queremos Assets/StreamingAssets/Tools/gltfpack.exe -> absoluto
+        string projRoot = Directory.GetParent(UApp.dataPath)!.FullName;
+        return Path.Combine(projRoot, "Assets", "StreamingAssets", "Tools", "gltfpack.exe");
+    }
+#endif
+
     private async Task<bool> CompressMeshoptAsync(string input, string output)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(output));
-        string args = $"-i \"{input}\" -o \"{output}\" -cc";
-        int code = await RunProcessAsync(GLTFPACK, args);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        string exe = GetGltfpackExeWin(); // absoluto
+        if (!File.Exists(exe))
+        {
+            UDebug.LogError($"gltfpack.exe não encontrado: {exe}. Coloque em Assets/StreamingAssets/Tools/");
+            return false;
+        }
+        string args = $"-i {Q(Path.GetFullPath(input))} -o {Q(Path.GetFullPath(output))} -cc";
+#elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
+        string exe = GLTFPACK_LINUX;      // absoluto
+        string args = $"-i {Q(input)} -o {Q(output)} -cc";
+#else
+        string exe = "gltfpack";          // fallback
+        string args = $"-i {Q(input)} -o {Q(output)} -cc";
+#endif
+
+        int code = await RunProcessAsync(exe, args);
         return code == 0;
     }
 
+
+    private static string WinPath(string p) => p.Replace('/', '\\');
+
     private async Task<bool> CompressDracoAsync(string input, string output)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(output));
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-        string file = "cmd.exe";
-        string args = $"/c \"{GLTF_TRANSFORM}\" optimize \"{input}\" \"{output}\" --compress draco";
+    // 1) Caminho absoluto do .cmd
+    string cmdPath = Environment.ExpandEnvironmentVariables(@"%APPDATA%\npm\gltf-transform.cmd");
+    if (!File.Exists(cmdPath))
+    {
+        UDebug.LogError($"gltf-transform.cmd não encontrado: {cmdPath}\nInstale com: npm i -g @gltf-transform/cli");
+        return false;
+    }
+
+    // 2) Normaliza caminhos para BACKSLASH e usa aspas
+    string inPath  = WinPath(Path.GetFullPath(input));
+    string outPath = WinPath(Path.GetFullPath(output));
+
+    // 3) QUOTING CORRETO: /c ""C:\...\gltf-transform.cmd" optimize "in" "out" --compress draco"
+    string file = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+    string args = $"/c \"\"{cmdPath}\" optimize {Q(inPath)} {Q(outPath)} --compress draco\"";
 #else
-        string file = GLTF_TRANSFORM;
-        string args = $"optimize \"{input}\" \"{output}\" --compress draco";
+        string file = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform"; // ajuste se mudar a versão
+        string args = $"optimize {Q(input)} {Q(output)} --compress draco";
 #endif
+
         int code = await RunProcessAsync(file, args);
         return code == 0;
     }
+
+
+    // ======== BOTÕES ========
 
     private async Task OnClickCompressMeshoptAsync()
     {
@@ -362,7 +448,6 @@ public class ModelViewer : MonoBehaviour
         }
 
         bool ok = await CompressMeshoptAsync(original, outMesh);
-        // registra o arquivo no mapa (para aparecer no dropdown)
         RegisterVariantFile(GetSelectedModelName(), "meshopt", Path.GetFileName(outMesh));
         PopulateVariantsForCurrentModel();
 
@@ -384,7 +469,6 @@ public class ModelViewer : MonoBehaviour
         }
 
         bool ok = await CompressDracoAsync(original, outDraco);
-        // registra o arquivo no mapa (para aparecer no dropdown)
         RegisterVariantFile(GetSelectedModelName(), "draco", Path.GetFileName(outDraco));
         PopulateVariantsForCurrentModel();
 
@@ -401,5 +485,81 @@ public class ModelViewer : MonoBehaviour
             _fileByModelVariant[modelName] = map;
         }
         map[variant] = fileName;
+    }
+
+    private bool ShouldAskToOverwrite(string modelName, string variant)
+    {
+        if (Metrics.Instance == null) return false;
+
+        try
+        {
+            var csvPath = GetCsvPath();
+            if (!File.Exists(csvPath)) return false;
+
+            var lines = File.ReadAllLines(csvPath);
+            if (lines.Length <= 1) return false; // apenas header ou arquivo vazio
+
+            // Verificar se já existe uma entrada com o mesmo modelo e variante
+            for (int i = 1; i < lines.Length; i++) // pular header
+            {
+                var columns = ParseCsvLine(lines[i]);
+                if (columns.Length >= 5) // timestamp,platform,unity_version,scene,model,variant...
+                {
+                    var existingModel = columns[4].Trim('"');
+                    var existingVariant = columns[5].Trim('"');
+                    
+                    if (string.Equals(existingModel, modelName, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(existingVariant, variant, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            UDebug.LogWarning($"Erro ao verificar CSV existente: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private string GetCsvPath()
+    {
+        if (Metrics.Instance.saveInsideProject)
+        {
+            var projectRoot = Directory.GetParent(UApp.dataPath)!.FullName;
+            return Path.Combine(projectRoot, Metrics.Instance.projectSubDir, Metrics.Instance.csvFileName);
+        }
+        return Path.Combine(UApp.persistentDataPath, "Benchmarks", Metrics.Instance.csvFileName);
+    }
+
+    private string[] ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        bool inQuotes = false;
+        string currentField = "";
+        
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(currentField);
+                currentField = "";
+            }
+            else
+            {
+                currentField += c;
+            }
+        }
+        
+        result.Add(currentField); // adicionar último campo
+        return result.ToArray();
     }
 }

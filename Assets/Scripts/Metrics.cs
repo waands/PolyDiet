@@ -53,10 +53,18 @@ public class Metrics : MonoBehaviour
         {
             // raiz do projeto (irmã da pasta Assets)
             var projectRoot = System.IO.Directory.GetParent(Application.dataPath)!.FullName;
-            return System.IO.Path.Combine(projectRoot, projectSubDir);
+            var outputDir = System.IO.Path.Combine(projectRoot, projectSubDir);
+            
+            // Debug para Windows
+            UnityEngine.Debug.Log($"[Metrics] Project root: {projectRoot}");
+            UnityEngine.Debug.Log($"[Metrics] Output dir: {outputDir}");
+            
+            return outputDir;
         }
         // fallback multiplataforma (recomendado para builds)
-        return System.IO.Path.Combine(Application.persistentDataPath, "Benchmarks");
+        var persistentDir = System.IO.Path.Combine(Application.persistentDataPath, "Benchmarks");
+        UnityEngine.Debug.Log($"[Metrics] Persistent dir: {persistentDir}");
+        return persistentDir;
     }
 
 
@@ -120,43 +128,69 @@ public class Metrics : MonoBehaviour
 
     public void WriteCsv()
     {
-        var dir  = GetOutputDir();
-        System.IO.Directory.CreateDirectory(dir);
-        var path = System.IO.Path.Combine(dir, csvFileName);
-
-        bool writeHeader = !System.IO.File.Exists(path);
-
-        // 'using' precisa ABRANGER a escrita TODA:
-        using (var sw = new System.IO.StreamWriter(path, append: true))
+        try
         {
-            if (writeHeader)
+            var dir = GetOutputDir();
+            UnityEngine.Debug.Log($"[Metrics] Criando diretório: {dir}");
+            System.IO.Directory.CreateDirectory(dir);
+            
+            var path = System.IO.Path.Combine(dir, csvFileName);
+            UnityEngine.Debug.Log($"[Metrics] Caminho do CSV: {path}");
+
+            bool writeHeader = !System.IO.File.Exists(path);
+            UnityEngine.Debug.Log($"[Metrics] Arquivo existe: {!writeHeader}, Escrevendo header: {writeHeader}");
+
+            // 'using' precisa ABRANGER a escrita TODA:
+            using (var sw = new System.IO.StreamWriter(path, append: true))
             {
-                sw.WriteLine("timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok");
+                if (writeHeader)
+                {
+                    sw.WriteLine("timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok");
+                    UnityEngine.Debug.Log("[Metrics] Header escrito");
+                }
+
+                string ts = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+                string platform = Application.platform.ToString();
+                string unityVer = Application.unityVersion;
+                string scene = SceneManager.GetActiveScene().name;
+
+                string csvLine = string.Join(",",
+                    ts,
+                    Safe(platform),
+                    Safe(unityVer),
+                    Safe(scene),
+                    Safe(_modelName),
+                    Safe(_variant),
+                    _fileMB.ToString("0.###", CultureInfo.InvariantCulture),
+                    _loadMs.ToString("0.###", CultureInfo.InvariantCulture),
+                    _memMB.ToString("0.###", CultureInfo.InvariantCulture),
+                    _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
+                    _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
+                    _lastLoadOk ? "true" : "false"
+                );
+
+                UnityEngine.Debug.Log($"[Metrics] Linha CSV: {csvLine}");
+                sw.WriteLine(csvLine);
+                sw.Flush(); // garantir que foi escrito
             }
 
-            string ts       = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
-            string platform = Application.platform.ToString();
-            string unityVer = Application.unityVersion;
-            string scene    = SceneManager.GetActiveScene().name; // ou: UnityEngine.SceneManagement.SceneManager...
-
-            sw.WriteLine(string.Join(",",
-                ts,
-                Safe(platform),
-                Safe(unityVer),
-                Safe(scene),
-                Safe(_modelName),
-                Safe(_variant),
-                _fileMB.ToString("0.###", CultureInfo.InvariantCulture),
-                _loadMs.ToString("0.###", CultureInfo.InvariantCulture),
-                _memMB.ToString("0.###", CultureInfo.InvariantCulture),
-                _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
-                _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
-                _lastLoadOk ? "true" : "false"
-            ));
-            // sw.Flush(); // opcional; o Dispose do 'using' já faz flush
+            UnityEngine.Debug.Log($"[Metrics] CSV salvo com sucesso: {path}");
+            
+            // Verificar se o arquivo foi realmente criado
+            if (System.IO.File.Exists(path))
+            {
+                var fileInfo = new System.IO.FileInfo(path);
+                UnityEngine.Debug.Log($"[Metrics] Arquivo confirmado - Tamanho: {fileInfo.Length} bytes");
+            }
+            else
+            {
+                UnityEngine.Debug.LogError($"[Metrics] ERRO: Arquivo não foi criado em {path}");
+            }
         }
-
-        UnityEngine.Debug.Log($"[Metrics] CSV salvo: {path}");
+        catch (System.Exception ex)
+        {
+            UnityEngine.Debug.LogError($"[Metrics] Erro ao escrever CSV: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     // =============== Utils ===============
