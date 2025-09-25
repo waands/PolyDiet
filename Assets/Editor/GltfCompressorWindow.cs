@@ -1,5 +1,7 @@
 ﻿#if UNITY_EDITOR
+using System;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -9,14 +11,60 @@ using UDebug = UnityEngine.Debug;         // <- alias p/ Unity Debug
 public class GltfCompressorWindow : EditorWindow
 {
     string streamingModelsRoot;
-    // Ajuste se quiser:
-    string gltfpackExe = "Assets/Tools/gltfpack.exe"; // Meshopt
-    string gltfTransformExe = "gltf-transform";       // Draco (global via npm)
+    string gltfpackExe;
+    string gltfTransformExe;
 
     [MenuItem("Tools/GLB Compressor")]
     public static void Open() => GetWindow<GltfCompressorWindow>("GLB Compressor");
 
-    void OnEnable() => streamingModelsRoot = Path.Combine(Application.dataPath, "StreamingAssets/Models");
+    void OnEnable() 
+    {
+        streamingModelsRoot = Path.Combine(Application.dataPath, "StreamingAssets/Models");
+        
+        // Configuração inteligente baseada na plataforma
+#if UNITY_EDITOR_LINUX
+        // Tentar detectar automaticamente no Linux
+        gltfpackExe = DetectGltfpackPath();
+        gltfTransformExe = DetectGltfTransformPath();
+#elif UNITY_EDITOR_WIN
+        gltfpackExe = "Assets/Tools/gltfpack.exe"; // Meshopt
+        gltfTransformExe = "gltf-transform";       // Draco (global via npm)
+#else
+        gltfpackExe = "gltfpack";
+        gltfTransformExe = "gltf-transform";
+#endif
+    }
+
+#if UNITY_EDITOR_LINUX
+    private string DetectGltfpackPath()
+    {
+        if (File.Exists("/usr/bin/gltfpack")) return "/usr/bin/gltfpack";
+        if (File.Exists("/usr/local/bin/gltfpack")) return "/usr/local/bin/gltfpack";
+        return "gltfpack"; // fallback
+    }
+    
+    private string DetectGltfTransformPath()
+    {
+        var homePath = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrEmpty(homePath))
+        {
+            var nodeVersionsDir = Path.Combine(homePath, ".nvm/versions/node");
+            if (Directory.Exists(nodeVersionsDir))
+            {
+                var versions = Directory.GetDirectories(nodeVersionsDir)
+                    .OrderByDescending(d => d)
+                    .ToArray();
+                
+                foreach (var versionDir in versions)
+                {
+                    var gltfTransformPath = Path.Combine(versionDir, "bin/gltf-transform");
+                    if (File.Exists(gltfTransformPath)) return gltfTransformPath;
+                }
+            }
+        }
+        return "gltf-transform"; // fallback
+    }
+#endif
 
     void OnGUI()
     {

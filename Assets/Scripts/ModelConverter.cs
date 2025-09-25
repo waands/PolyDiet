@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -149,58 +150,92 @@ public static class ModelConverter
 
     /// <summary>
     /// Método 3: Conversão usando ferramenta externa
-    /// Requer: gltf-pipeline.exe em StreamingAssets/Tools/
+    /// Usa obj2gltf e gltf-transform para converter OBJ para GLB
     /// </summary>
     static async Task<bool> TryConvertWithExternalTool(string sourcePath, string destPath)
     {
         try
         {
-            string toolsDir = Path.Combine(Application.streamingAssetsPath, "Tools");
-            string gltfPipelinePath = Path.Combine(toolsDir, "gltf-pipeline.exe");
+            string extension = Path.GetExtension(sourcePath).ToLower();
             
-            Debug.Log($"[ModelConverter] Procurando ferramenta em: {gltfPipelinePath}");
-            
-            if (!File.Exists(gltfPipelinePath))
+            // Para arquivos .obj, usa obj2gltf
+            if (extension == ".obj")
             {
-                Debug.LogWarning($"[ModelConverter] ⚠️ gltf-pipeline.exe não encontrado em: {toolsDir}");
-                Debug.LogWarning($"[ModelConverter] ⚠️ Crie o diretório Tools e coloque gltf-pipeline.exe lá");
+                Debug.Log($"[ModelConverter] Iniciando conversão OBJ → GLB usando obj2gltf");
+                return await ConvertObjToGlbWithObj2Gltf(sourcePath, destPath);
+            }
+            
+            // Para arquivos .gltf, converte para .glb usando gltf-transform
+            if (extension == ".gltf")
+            {
+                Debug.Log($"[ModelConverter] Convertendo GLTF → GLB usando gltf-transform");
+                return await ConvertGltfToGlbWithGltfTransform(sourcePath, destPath);
+            }
+            
+            Debug.LogWarning($"[ModelConverter] ⚠️ Formato {extension} não suportado pela ferramenta externa");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ModelConverter] ❌ Erro na conversão externa: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Converte OBJ diretamente para GLB usando obj2gltf
+    /// </summary>
+    static async Task<bool> ConvertObjToGlbWithObj2Gltf(string objPath, string glbPath)
+    {
+        try
+        {
+            // Verifica se obj2gltf está disponível
+            string obj2gltf = DetectObj2GltfPath();
+            if (string.IsNullOrEmpty(obj2gltf))
+            {
+                Debug.LogError("[ModelConverter] obj2gltf não encontrado. Instale com: npm install -g obj2gltf");
                 return false;
             }
+            
+            Debug.Log($"[ModelConverter] Usando obj2gltf: {obj2gltf}");
+            Debug.Log($"[ModelConverter] Convertendo: {objPath} → {glbPath}");
 
-            Debug.Log($"[ModelConverter] Executando: {gltfPipelinePath} -i \"{sourcePath}\" -o \"{destPath}\"");
-
-            // Comando: gltf-pipeline -i input.obj -o output.glb
+            // obj2gltf pode converter diretamente para GLB usando --binary
             var processInfo = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = gltfPipelinePath,
-                Arguments = $"-i \"{sourcePath}\" -o \"{destPath}\"",
+                FileName = obj2gltf,
+                Arguments = $"--binary -i \"{objPath}\" -o \"{glbPath}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = toolsDir
+                WorkingDirectory = Path.GetDirectoryName(objPath)
             };
 
             using (var process = System.Diagnostics.Process.Start(processInfo))
             {
                 if (process != null)
                 {
-                    // WaitForExitAsync não está disponível em versões antigas do .NET
-                    // Usamos Task.Run para tornar assíncrono
-                    await Task.Run(() => process.WaitForExit());
-                    bool success = process.ExitCode == 0 && File.Exists(destPath);
+                    await Task.Run(() => process.WaitForExit(60000)); // timeout de 60s
+                    
+                    string stdout = process.StandardOutput.ReadToEnd();
+                    string stderr = process.StandardError.ReadToEnd();
+                    
+                    bool success = process.ExitCode == 0 && File.Exists(glbPath);
                     
                     if (success)
                     {
-                        Debug.Log($"[ModelConverter] ✅ Conversão externa bem-sucedida: {Path.GetFileName(sourcePath)} → {Path.GetFileName(destPath)}");
+                        var fileInfo = new FileInfo(glbPath);
+                        Debug.Log($"[ModelConverter] ✅ obj2gltf conversão bem-sucedida!");
+                        Debug.Log($"[ModelConverter] Arquivo GLB criado: {glbPath} ({fileInfo.Length / 1024.0:F1} KB)");
                     }
                     else
                     {
-                        string error = process.StandardError.ReadToEnd();
-                        string output = process.StandardOutput.ReadToEnd();
-                        Debug.LogError($"[ModelConverter] ❌ Erro na conversão externa (ExitCode: {process.ExitCode})");
-                        Debug.LogError($"[ModelConverter] ❌ Erro: {error}");
-                        Debug.LogError($"[ModelConverter] ❌ Output: {output}");
+                        Debug.LogError($"[ModelConverter] ❌ obj2gltf falhou (ExitCode: {process.ExitCode})");
+                        if (!string.IsNullOrEmpty(stderr))
+                            Debug.LogError($"[ModelConverter] stderr: {stderr}");
+                        if (!string.IsNullOrEmpty(stdout))
+                            Debug.LogError($"[ModelConverter] stdout: {stdout}");
                     }
                     
                     return success;
@@ -211,9 +246,162 @@ public static class ModelConverter
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[ModelConverter] ❌ Erro na conversão externa: {ex.Message}");
+            Debug.LogError($"[ModelConverter] ❌ obj2gltf erro: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Converte GLTF para GLB usando gltf-transform
+    /// </summary>
+    static async Task<bool> ConvertGltfToGlbWithGltfTransform(string gltfPath, string glbPath)
+    {
+        try
+        {
+            string gltfTransform = DetectGltfTransformPath();
+            if (string.IsNullOrEmpty(gltfTransform))
+            {
+                Debug.LogError("[ModelConverter] gltf-transform não encontrado");
+                return false;
+            }
+            
+            Debug.Log($"[ModelConverter] Usando gltf-transform: {gltfTransform}");
+            Debug.Log($"[ModelConverter] Convertendo: {gltfPath} → {glbPath}");
+
+            var processInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = gltfTransform,
+                Arguments = $"copy \"{gltfPath}\" \"{glbPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(gltfPath)
+            };
+
+            using (var process = System.Diagnostics.Process.Start(processInfo))
+            {
+                if (process != null)
+                {
+                    await Task.Run(() => process.WaitForExit());
+                    
+                    string stdout = process.StandardOutput.ReadToEnd();
+                    string stderr = process.StandardError.ReadToEnd();
+                    
+                    bool success = process.ExitCode == 0 && File.Exists(glbPath);
+                    
+                    if (success)
+                    {
+                        Debug.Log($"[ModelConverter] ✅ gltf-transform conversão GLTF→GLB bem-sucedida");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[ModelConverter] ⚠️ gltf-transform falhou (ExitCode: {process.ExitCode})");
+                        if (!string.IsNullOrEmpty(stderr))
+                            Debug.LogWarning($"[ModelConverter] stderr: {stderr}");
+                        if (!string.IsNullOrEmpty(stdout))
+                            Debug.LogWarning($"[ModelConverter] stdout: {stdout}");
+                    }
+                    
+                    return success;
+                }
+            }
+            
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ModelConverter] ❌ gltf-transform erro: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Detecta o caminho do obj2gltf
+    /// </summary>
+    static string DetectObj2GltfPath()
+    {
+        // Usa a mesma lógica do gltf-transform para encontrar obj2gltf
+        var nvmPath = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrEmpty(nvmPath))
+        {
+            // Tenta o caminho específico da versão atual do Node.js
+            var nvmObj2Gltf = Path.Combine(nvmPath, ".nvm/versions/node/v22.19.0/bin/obj2gltf");
+            if (File.Exists(nvmObj2Gltf)) return nvmObj2Gltf;
+            
+            // Procura em todas as versões do Node.js
+            var nodeVersionsDir = Path.Combine(nvmPath, ".nvm/versions/node");
+            if (Directory.Exists(nodeVersionsDir))
+            {
+                var versions = Directory.GetDirectories(nodeVersionsDir)
+                    .OrderByDescending(d => d)
+                    .ToArray();
+                
+                foreach (var versionDir in versions)
+                {
+                    var obj2GltfPath = Path.Combine(versionDir, "bin/obj2gltf");
+                    if (File.Exists(obj2GltfPath)) return obj2GltfPath;
+                }
+            }
+        }
+        
+        // Tenta caminhos comuns do sistema
+        string[] possiblePaths = {
+            "/usr/bin/obj2gltf",
+            "/usr/local/bin/obj2gltf"
+        };
+        
+        foreach (string path in possiblePaths)
+        {
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+        
+        // Fallback para PATH
+        if (CrossPlatformHelper.ExecutableExists("obj2gltf"))
+        {
+            return "obj2gltf";
+        }
+        
+        return null;
+    }
+
+    /// <summary>
+    /// Detecta o caminho do gltf-transform
+    /// </summary>
+    static string DetectGltfTransformPath()
+    {
+        // Usa a mesma lógica do ModelViewer
+        var nvmPath = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrEmpty(nvmPath))
+        {
+            var nvmGltfTransform = Path.Combine(nvmPath, ".nvm/versions/node/v22.19.0/bin/gltf-transform");
+            if (File.Exists(nvmGltfTransform)) return nvmGltfTransform;
+            
+            var nodeVersionsDir = Path.Combine(nvmPath, ".nvm/versions/node");
+            if (Directory.Exists(nodeVersionsDir))
+            {
+                var versions = Directory.GetDirectories(nodeVersionsDir)
+                    .OrderByDescending(d => d)
+                    .ToArray();
+                
+                foreach (var versionDir in versions)
+                {
+                    var gltfTransformPath = Path.Combine(versionDir, "bin/gltf-transform");
+                    if (File.Exists(gltfTransformPath)) return gltfTransformPath;
+                }
+            }
+        }
+        
+        // Fallback para PATH
+        if (CrossPlatformHelper.ExecutableExists("gltf-transform"))
+        {
+            return "gltf-transform";
+        }
+        
+        return null;
     }
 
     /// <summary>

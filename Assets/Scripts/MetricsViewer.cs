@@ -17,6 +17,7 @@ public class MetricsViewer : MonoBehaviour
     public TMP_Text summaryText;
     public Button buttonRefresh;
     public Button buttonOpenFolder;
+    public Button buttonClose;                   // botão para fechar o painel
 
     [Header("Tabela")]
     public Transform tableContent;               // Content do ScrollView
@@ -49,6 +50,7 @@ public class MetricsViewer : MonoBehaviour
     {
         if (buttonRefresh)    buttonRefresh.onClick.AddListener(Refresh);
         if (buttonOpenFolder) buttonOpenFolder.onClick.AddListener(OpenFolder);
+        if (buttonClose)      buttonClose.onClick.AddListener(ClosePanel);
         if (dropdownModel)    dropdownModel.onValueChanged.AddListener(_ => ApplyFilters());
         if (dropdownVariant)  dropdownVariant.onValueChanged.AddListener(_ => ApplyFilters());
         if (buttonSelectAll) buttonSelectAll.onClick.AddListener(() => SetAllVariantChips(true));
@@ -249,5 +251,11 @@ public class MetricsViewer : MonoBehaviour
         foreach (var t in _variantToggles.Values)
             if (t) t.isOn = on;
         ApplyFilters();
+    }
+
+    void ClosePanel()
+    {
+        if (panel != null)
+            panel.SetActive(false);
     }
 }

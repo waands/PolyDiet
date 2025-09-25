@@ -53,16 +53,16 @@ public class Metrics : MonoBehaviour
         if (saveInsideProject)
         {
             var projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
-            return Path.Combine(projectRoot, projectSubDir);
+            return CrossPlatformHelper.CombinePaths(projectRoot, projectSubDir);
         }
-        return Path.Combine(Application.persistentDataPath, "Benchmarks");
+        return CrossPlatformHelper.CombinePaths(Application.persistentDataPath, "Benchmarks");
     }
 
     public string GetCsvPathPublic()
     {
         var dir = GetOutputDir();
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, csvFileName);
+        CrossPlatformHelper.EnsureDirectoryExists(dir);
+        return CrossPlatformHelper.CombinePaths(dir, csvFileName);
     }
 
 
@@ -127,8 +127,8 @@ public class Metrics : MonoBehaviour
     public void WriteCsv()
     {
         var dir  = GetOutputDir();
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, csvFileName);
+        CrossPlatformHelper.EnsureDirectoryExists(dir);
+        var path = CrossPlatformHelper.CombinePaths(dir, csvFileName);
 
         string ts       = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
         string platform = Application.platform.ToString();

@@ -37,8 +37,46 @@ public class ModelViewer : MonoBehaviour
 
     // ===== Caminhos dos CLIs =====
 #if UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-    private const string GLTF_TRANSFORM_LINUX = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform";
-    private const string GLTFPACK_LINUX      = "/usr/bin/gltfpack";
+    // Função para detectar o caminho do gltf-transform
+    private static string GetGltfTransformLinux()
+    {
+        // Primeiro, tentar o caminho específico (Node.js via NVM)
+        var nvmPath = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrEmpty(nvmPath))
+        {
+            var nvmGltfTransform = Path.Combine(nvmPath, ".nvm/versions/node/v22.19.0/bin/gltf-transform");
+            if (File.Exists(nvmGltfTransform)) return nvmGltfTransform;
+            
+            // Tentar outras versões do Node.js
+            var nodeVersionsDir = Path.Combine(nvmPath, ".nvm/versions/node");
+            if (Directory.Exists(nodeVersionsDir))
+            {
+                var versions = Directory.GetDirectories(nodeVersionsDir)
+                    .OrderByDescending(d => d) // Versões mais recentes primeiro
+                    .ToArray();
+                
+                foreach (var versionDir in versions)
+                {
+                    var gltfTransformPath = Path.Combine(versionDir, "bin/gltf-transform");
+                    if (File.Exists(gltfTransformPath)) return gltfTransformPath;
+                }
+            }
+        }
+        
+        // Tentar no PATH do sistema
+        return "gltf-transform"; // Fallback para o PATH
+    }
+    
+    // Função para detectar o caminho do gltfpack
+    private static string GetGltfpackLinux()
+    {
+        // Primeiro tentar o caminho comum
+        if (File.Exists("/usr/bin/gltfpack")) return "/usr/bin/gltfpack";
+        if (File.Exists("/usr/local/bin/gltfpack")) return "/usr/local/bin/gltfpack";
+        
+        // Fallback para o PATH
+        return "gltfpack";
+    }
 #elif UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
     private const string GLTF_TRANSFORM_WIN_CMD = @"%APPDATA%\npm\gltf-transform.cmd"; // chamado via cmd.exe /c
 #else
@@ -219,13 +257,16 @@ public class ModelViewer : MonoBehaviour
 
             string root = UApp.streamingAssetsPath;
             string path = Path.Combine(root, "Models", modelName, variant, fileName);
+            path = CrossPlatformHelper.NormalizePath(path);
+            
             if (!File.Exists(path))
             {
                 SetStatus($"Arquivo não encontrado: {variant}/{fileName}.");
                 return;
             }
 
-            string url = "file://" + path.Replace("\\", "/");
+            // Garantir que a URL use barras Unix para compatibilidade
+            string url = "file://" + CrossPlatformHelper.ToUnixPath(path);
 
             // Iniciar medição de métricas
             if (Metrics.Instance != null)
@@ -310,9 +351,10 @@ public class ModelViewer : MonoBehaviour
         string baseDraco = GetFileNameFor(modelName, "draco") ?? baseOriginal;
         string baseMesh = GetFileNameFor(modelName, "meshopt") ?? baseOriginal;
 
-        string original = Path.Combine(root, "Models", modelName, "original", baseOriginal);
-        string outDraco = Path.Combine(root, "Models", modelName, "draco", baseDraco);
-        string outMesh = Path.Combine(root, "Models", modelName, "meshopt", baseMesh);
+        string original = CrossPlatformHelper.CombinePaths(root, "Models", modelName, "original", baseOriginal);
+        string outDraco = CrossPlatformHelper.CombinePaths(root, "Models", modelName, "draco", baseDraco);
+        string outMesh = CrossPlatformHelper.CombinePaths(root, "Models", modelName, "meshopt", baseMesh);
+        
         return (original, outDraco, outMesh);
     }
 
@@ -421,7 +463,11 @@ public class ModelViewer : MonoBehaviour
                 return false;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+            if (!CrossPlatformHelper.EnsureDirectoryExists(Path.GetDirectoryName(output)!))
+            {
+                UDebug.LogError($"[CompressMeshopt] Não foi possível criar diretório de saída");
+                return false;
+            }
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
             string exe = GetGltfpackExeWin(); // absoluto
@@ -433,15 +479,23 @@ public class ModelViewer : MonoBehaviour
             }
             string args = $"-i {Q(Path.GetFullPath(input))} -o {Q(Path.GetFullPath(output))} -cc";
 #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-            string exe = GLTFPACK_LINUX;      // absoluto
+            string exe = GetGltfpackLinux();      // dinâmico
             string args = $"-i {Q(input)} -o {Q(output)} -cc";
 #else
-            string exe = "gltfpack";          // fallback
+            string exe = GLTFPACK_FALLBACK;          // fallback
             string args = $"-i {Q(input)} -o {Q(output)} -cc";
 #endif
 
             UDebug.Log($"[CompressMeshopt] Comprimindo: {input} → {output}");
             UDebug.Log($"[CompressMeshopt] Executando: {exe} {args}");
+            
+            // Verificar se o executável existe antes de tentar executar
+            if (!CrossPlatformHelper.ExecutableExists(exe) && !Path.IsPathRooted(exe))
+            {
+                UDebug.LogError($"[CompressMeshopt] Executável não encontrado no PATH: {exe}");
+                UDebug.LogError($"[CompressMeshopt] Instale o gltfpack ou ajuste o caminho");
+                return false;
+            }
 
             int code = await RunProcessAsync(exe, args);
             bool success = code == 0 && File.Exists(output);
@@ -481,7 +535,11 @@ public class ModelViewer : MonoBehaviour
                 return false;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+            if (!CrossPlatformHelper.EnsureDirectoryExists(Path.GetDirectoryName(output)!))
+            {
+                UDebug.LogError($"[CompressDraco] Não foi possível criar diretório de saída");
+                return false;
+            }
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
             // 1) Caminho absoluto do .cmd
@@ -502,8 +560,21 @@ public class ModelViewer : MonoBehaviour
             // 3) QUOTING CORRETO: /c ""C:\...\gltf-transform.cmd" optimize "in" "out" --compress draco"
             string file = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
             string args = $"/c \"\"{cmdPath}\" optimize {Q(inPath)} {Q(outPath)} --compress draco\"";
+#elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
+            UDebug.Log($"[CompressDraco] Comprimindo: {input} → {output}");
+            
+            string file = GetGltfTransformLinux(); // dinâmico
+            string args = $"optimize {Q(input)} {Q(output)} --compress draco";
+            
+            // Verificar se o executável existe
+            if (!CrossPlatformHelper.ExecutableExists(file) && !Path.IsPathRooted(file))
+            {
+                UDebug.LogError($"[CompressDraco] gltf-transform não encontrado: {file}");
+                UDebug.LogError($"[CompressDraco] Instale com: npm i -g @gltf-transform/cli");
+                return false;
+            }
 #else
-            string file = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform"; // ajuste se mudar a versão
+            string file = GLTF_TRANSFORM_FALLBACK;
             string args = $"optimize {Q(input)} {Q(output)} --compress draco";
 #endif
 
