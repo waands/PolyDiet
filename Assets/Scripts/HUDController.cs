@@ -9,11 +9,13 @@ public class HUDController : MonoBehaviour
     [Header("Refs")]
     public WizardController wizard;
     public ModelViewer viewer;
+    public SimpleOrbitCamera orbitCamera;
 
     [Header("UI")]
     public Button buttonToggleWizard;
     public Button buttonQuickLoad;
     public TextMeshProUGUI quickLoadLabel; // opcional: mostra status
+    public Button buttonResetCamera;
     
     [Header("Model Selector")]
     public GameObject modelSelectorPanel;
@@ -30,6 +32,7 @@ public class HUDController : MonoBehaviour
     {
         if (buttonToggleWizard) buttonToggleWizard.onClick.AddListener(() => wizard?.Toggle());
         if (buttonQuickLoad)    buttonQuickLoad.onClick.AddListener(() => _ = QuickLoadAsync());
+        if (buttonResetCamera)  buttonResetCamera.onClick.AddListener(() => ResetCamera());
         
         // Model selector
         if (buttonQuickLoad) buttonQuickLoad.onClick.AddListener(() => ShowModelSelector());
@@ -104,6 +107,21 @@ public class HUDController : MonoBehaviour
         _currentLoadedModel = modelName;
         _currentLoadedVariant = variant;
         UpdateCurrentModelLabel();
+        
+        // Ajusta a câmera automaticamente para o novo modelo
+        if (orbitCamera != null)
+        {
+            orbitCamera.AutoFitToModel();
+        }
+    }
+
+    // Reset da câmera para posição padrão
+    void ResetCamera()
+    {
+        if (orbitCamera != null)
+        {
+            orbitCamera.ResetCamera();
+        }
     }
 
     // ============ MODEL SELECTOR ============

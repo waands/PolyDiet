@@ -1,5 +1,8 @@
+timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok
 
-2025-09-24T20:18:36-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,50.406,404.373,220.37,87.4,true
-2025-09-24T20:19:04-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","meshopt",0.092,20.945,391.519,245.56,186.06,true
-2025-09-24T20:18:59-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","original",0.807,338.325,396.506,231.71,117.97,true
-2025-09-24T20:19:10-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","draco",0.059,143.834,391.389,242.69,164.87,true
+2025-09-24T21:03:31-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","meshopt",0.092,68.026,415.18,35.43,25.54,true
+2025-09-24T21:03:18-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","original",0.807,115.109,425.006,199.84,104.06,true
+2025-09-24T21:03:38-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","draco",0.059,2194.796,415.618,25.54,25.54,true
+2025-09-24T21:04:10-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","original",0.245,57.625,427.915,184.05,84.19,true
+2025-09-24T21:04:15-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,72.992,426.495,199.54,96.75,true
+2025-09-24T21:04:21-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","draco",0.052,95.388,426.414,207.94,101.46,true

@@ -28,6 +28,7 @@ public class ModelViewer : MonoBehaviour
     
     [Header("Refs")]
     public HUDController hudController; // referência para notificar sobre carregamentos
+    public SimpleOrbitCamera orbitCamera; // referência para ajustar câmera automaticamente
 
     // ===== Descoberta dinâmica =====
     private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
@@ -277,10 +278,19 @@ public class ModelViewer : MonoBehaviour
                 SetStatus($"{modelName} ({variant})");
             }
 
-            // Notifica o HUDController sobre o modelo carregado
-            if (ok && hudController != null)
+            // Notifica o HUDController sobre o modelo carregado e ajusta câmera
+            if (ok)
             {
-                hudController.NotifyModelLoaded(modelName, variant);
+                if (hudController != null)
+                {
+                    hudController.NotifyModelLoaded(modelName, variant);
+                }
+                
+                // Define o target da câmera para o modelo carregado
+                if (orbitCamera != null && _currentContainer != null)
+                {
+                    orbitCamera.SetTarget(_currentContainer.transform);
+                }
             }
 
             buttonLoad.interactable = true;
