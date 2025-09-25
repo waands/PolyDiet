@@ -27,8 +27,23 @@ public class MetricsViewer : MonoBehaviour
     public bool useReportCards = true;           // ← liga o modo relatório
     public GameObject cardPrefab;                // ← arraste o prefab ReportCard
 
+    // ---- Multi-seleção de variantes (chips) ----
+    [Header("Variants (multi-select)")]
+    public bool multiSelectVariants = true;         // liga/desliga modo chips
+    public Transform variantChipContainer;          // RowTop/VariantChips
+    public Toggle variantChipPrefab;                // Toggle desativado (prefab)
+    public Button buttonSelectAll;                  // opcional
+    public Button buttonClearAll;                   // opcional
+
+    [Header("Cards / comparação")]
+    public bool latestPerVariant = true;            // 1 card por variante (run mais recente)
+
     List<MetricsEntry> _all = new();
     List<MetricsEntry> _filtered = new();
+
+    // internos
+    readonly System.Collections.Generic.Dictionary<string, Toggle> _variantToggles =
+        new System.Collections.Generic.Dictionary<string, Toggle>(System.StringComparer.OrdinalIgnoreCase);
 
     void Awake()
     {
@@ -36,6 +51,8 @@ public class MetricsViewer : MonoBehaviour
         if (buttonOpenFolder) buttonOpenFolder.onClick.AddListener(OpenFolder);
         if (dropdownModel)    dropdownModel.onValueChanged.AddListener(_ => ApplyFilters());
         if (dropdownVariant)  dropdownVariant.onValueChanged.AddListener(_ => ApplyFilters());
+        if (buttonSelectAll) buttonSelectAll.onClick.AddListener(() => SetAllVariantChips(true));
+        if (buttonClearAll)  buttonClearAll.onClick.AddListener(() => SetAllVariantChips(false));
     }
 
     void OnEnable() => Refresh();
@@ -82,30 +99,75 @@ public class MetricsViewer : MonoBehaviour
             ? dropdownModel.options[dropdownModel.value].text : null;
 
         var variants = string.IsNullOrEmpty(model) || model == "(sem dados)"
-            ? new List<string> { "(sem dados)" }
+            ? new List<string>()
             : MetricsStore.Variants(_all, model);
 
-        if (variants.Count == 0) variants.Add("(sem dados)");
-        dropdownVariant?.ClearOptions();
-        dropdownVariant?.AddOptions(variants);
-        dropdownVariant?.SetValueWithoutNotify(0);
+        if (multiSelectVariants)
+        {
+            BuildVariantChips(variants);
+        }
+        else
+        {
+            // fallback: dropdown (se quiser manter ambos os modos)
+            dropdownVariant?.ClearOptions();
+            if (variants.Count == 0) variants.Add("(sem dados)");
+            dropdownVariant?.AddOptions(variants);
+            dropdownVariant?.SetValueWithoutNotify(0);
+        }
     }
 
     void ApplyFilters()
     {
-        if (dropdownModel == null || dropdownVariant == null) return;
-        string model   = dropdownModel.options.Count > 0 ? dropdownModel.options[dropdownModel.value].text : null;
-        string variant = dropdownVariant.options.Count > 0 ? dropdownVariant.options[dropdownVariant.value].text : null;
+        if (_all == null) return;
 
-        if (model == "(sem dados)") model = null;
-        if (variant == "(sem dados)") variant = null;
+        string model = dropdownModel != null && dropdownModel.options.Count > 0
+            ? dropdownModel.options[dropdownModel.value].text : null;
 
-        _filtered = MetricsStore.Filter(_all, model, variant).Take(maxRows).ToList();
-        
-        if (useReportCards) RenderCards(_filtered);
-        else RenderTable(_filtered);
-        
-        RenderSummary(_filtered, model, variant);
+        // ----- variantes selecionadas -----
+        System.Collections.Generic.List<MetricsEntry> rows;
+
+        if (multiSelectVariants && variantChipContainer != null)
+        {
+            var selected = GetSelectedVariants();
+
+            if (selected.Count == 0)
+            {
+                // nada marcado → mostra nada (ou tudo, se preferir)
+                rows = new System.Collections.Generic.List<MetricsEntry>();
+            }
+            else if (latestPerVariant)
+            {
+                // 1 card por variante: pega a execução mais recente de cada variante marcada
+                rows = new System.Collections.Generic.List<MetricsEntry>();
+                foreach (var v in selected)
+                {
+                    var e = _all.FirstOrDefault(x => x.model == model && x.variant == v);
+                    if (e != null) rows.Add(e);
+                }
+            }
+            else
+            {
+                // lista completa das variantes marcadas (ordenada por data desc)
+                rows = _all.Where(e => e.model == model && selected.Contains(e.variant)).ToList();
+            }
+        }
+        else
+        {
+            // modo antigo: dropdown de variante
+            string variant = dropdownVariant != null && dropdownVariant.options.Count > 0
+                ? dropdownVariant.options[dropdownVariant.value].text : null;
+
+            rows = MetricsStore.Filter(_all, model, variant);
+        }
+
+        // Render
+        if (useReportCards)
+            RenderCards(rows);
+        else
+            RenderTable(rows); // se ainda quiser a tabela
+
+        // Summary (ajuste a seu gosto)
+        RenderSummary(rows, model, multiSelectVariants ? "(multi)" : (dropdownVariant?.options.Count > 0 ? dropdownVariant.options[dropdownVariant.value].text : null));
     }
 
     void RenderCards(System.Collections.Generic.List<MetricsEntry> rows)
@@ -151,5 +213,41 @@ public class MetricsViewer : MonoBehaviour
             $"Último: {last.model}({last.variant})  load {last.load_ms:0.#} ms · FPS {last.fps_avg:0.#} · 1% {last.fps_1pc_low:0.#} · Mem {last.mem_mb:0.#} MB  \n" +
             $"Média: load {loadAvg:0.#} ms · FPS {fpsAvg:0.#} · 1% {fpsP01:0.#} · Mem {memAvg:0.#} MB · File {fileAvg:0.##} MB"
         );
+    }
+
+    void BuildVariantChips(System.Collections.Generic.List<string> variants)
+    {
+        // Limpa os antigos
+        foreach (Transform c in variantChipContainer) Destroy(c.gameObject);
+        _variantToggles.Clear();
+
+        if (variantChipContainer == null || variantChipPrefab == null) return;
+
+        // Cria um toggle por variante (default: ON)
+        foreach (var v in variants)
+        {
+            var chip = Instantiate(variantChipPrefab, variantChipContainer);
+            chip.gameObject.SetActive(true);
+            var label = chip.GetComponentInChildren<TMPro.TMP_Text>();
+            if (label) label.SetText(v);
+            chip.isOn = true;
+            chip.onValueChanged.AddListener(_ => ApplyFilters());
+            _variantToggles[v] = chip;
+        }
+    }
+
+    System.Collections.Generic.HashSet<string> GetSelectedVariants()
+    {
+        var set = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in _variantToggles)
+            if (kv.Value && kv.Value.isOn) set.Add(kv.Key);
+        return set;
+    }
+
+    void SetAllVariantChips(bool on)
+    {
+        foreach (var t in _variantToggles.Values)
+            if (t) t.isOn = on;
+        ApplyFilters();
     }
 }

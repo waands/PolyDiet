@@ -201,7 +201,7 @@ public class WizardController : MonoBehaviour
 #if UNITY_EDITOR
         if (useEditorFilePicker)
         {
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Selecione .glb", "", "glb");
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Selecione modelo 3D", "", "glb,gltf,obj,fbx");
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
                 _importSourcePath = path;
         }
@@ -214,7 +214,7 @@ public class WizardController : MonoBehaviour
 
         if (string.IsNullOrEmpty(_importSourcePath))
         {
-            bodyText?.SetText("Nenhum arquivo selecionado. Coloque seu .glb em StreamingAssets/Models/<Nome>/original/model.glb e clique ‘Pular’ para continuar.");
+            bodyText?.SetText("Nenhum arquivo selecionado. Coloque seu modelo em StreamingAssets/Models/<Nome>/original/model.glb e clique 'Pular' para continuar.");
             return;
         }
 
@@ -232,13 +232,32 @@ public class WizardController : MonoBehaviour
         Directory.CreateDirectory(destRoot);
         string dest = Path.Combine(destRoot, "model.glb");
 
-        // Copia
-        File.Copy(_importSourcePath, dest, overwrite: true);
+        // Verifica se precisa converter
+        string extension = Path.GetExtension(_importSourcePath).ToLower();
+        if (extension == ".obj" || extension == ".fbx")
+        {
+            SetUI("Convertendo...", $"Convertendo {extension.ToUpper()} para GLB...");
+            SetButtons("", "", back:false);
+            
+            bool converted = await ConvertToGlbAsync(_importSourcePath, dest);
+            if (!converted)
+            {
+                SetUI("Erro na conversão", $"Falha ao converter {extension.ToUpper()} para GLB");
+                SetButtons("Tentar novamente", "", back:true);
+                Go(Step.Import);
+                return;
+            }
+        }
+        else
+        {
+            // Copia diretamente se já for GLB/GLTF
+            File.Copy(_importSourcePath, dest, overwrite: true);
+        }
 
         // Atualiza ModelViewer
         viewer.RescanModels();
 
-        SetUI("Importado ✅", $"Modelo \"{_modelName}\" foi copiado para:\n{dest}");
+        SetUI("Importado ✅", $"Modelo \"{_modelName}\" foi importado em:\n{dest}");
         SetButtons("Continuar", "", back:true);
         Go(Step.AskCompress);
         await Task.Yield();
@@ -390,6 +409,13 @@ public class WizardController : MonoBehaviour
         var cg = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
         cg.alpha = 0; cg.blocksRaycasts = false; cg.interactable = false;
         panel.SetActive(false);
+    }
+
+    // ================== CONVERSÃO AUTOMÁTICA ==================
+
+    async Task<bool> ConvertToGlbAsync(string sourcePath, string destPath)
+    {
+        return await ModelConverter.ConvertToGlbAsync(sourcePath, destPath);
     }
 
 }

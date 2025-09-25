@@ -367,10 +367,26 @@ public class ModelViewer : MonoBehaviour
                 int code = p.ExitCode;
                 string so = p.StandardOutput.ReadToEnd();
                 string se = p.StandardError.ReadToEnd();
-                if (code == 0) UDebug.Log(so); else UDebug.LogError(se);
+                
+                // Logs mais detalhados
+                if (code == 0)
+                {
+                    if (!string.IsNullOrEmpty(so))
+                        UDebug.Log($"[Process] Output: {so}");
+                    UDebug.Log($"[Process] ✅ Processo concluído com sucesso (exit code: {code})");
+                }
+                else
+                {
+                    UDebug.LogError($"[Process] ❌ Processo falhou (exit code: {code})");
+                    if (!string.IsNullOrEmpty(so))
+                        UDebug.LogError($"[Process] Output: {so}");
+                    if (!string.IsNullOrEmpty(se))
+                        UDebug.LogError($"[Process] Error: {se}");
+                }
+                
                 tcs.TrySetResult(code);
             }
-            catch (Exception ex) { UDebug.LogError(ex); tcs.TrySetResult(-1); }
+            catch (Exception ex) { UDebug.LogError($"[Process] ❌ Erro no callback: {ex.Message}"); tcs.TrySetResult(-1); }
             finally { p.Dispose(); }
         };
 
@@ -396,26 +412,59 @@ public class ModelViewer : MonoBehaviour
 
     private async Task<bool> CompressMeshoptAsync(string input, string output)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        try
+        {
+            // Verifica se arquivo de entrada existe
+            if (!File.Exists(input))
+            {
+                UDebug.LogError($"[CompressMeshopt] Arquivo de entrada não encontrado: {input}");
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-        string exe = GetGltfpackExeWin(); // absoluto
-        if (!File.Exists(exe))
-        {
-            UDebug.LogError($"gltfpack.exe não encontrado: {exe}. Coloque em Assets/StreamingAssets/Tools/");
-            return false;
-        }
-        string args = $"-i {Q(Path.GetFullPath(input))} -o {Q(Path.GetFullPath(output))} -cc";
+            string exe = GetGltfpackExeWin(); // absoluto
+            if (!File.Exists(exe))
+            {
+                UDebug.LogError($"[CompressMeshopt] gltfpack.exe não encontrado: {exe}");
+                UDebug.LogError($"[CompressMeshopt] Coloque em Assets/StreamingAssets/Tools/");
+                return false;
+            }
+            string args = $"-i {Q(Path.GetFullPath(input))} -o {Q(Path.GetFullPath(output))} -cc";
 #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-        string exe = GLTFPACK_LINUX;      // absoluto
-        string args = $"-i {Q(input)} -o {Q(output)} -cc";
+            string exe = GLTFPACK_LINUX;      // absoluto
+            string args = $"-i {Q(input)} -o {Q(output)} -cc";
 #else
-        string exe = "gltfpack";          // fallback
-        string args = $"-i {Q(input)} -o {Q(output)} -cc";
+            string exe = "gltfpack";          // fallback
+            string args = $"-i {Q(input)} -o {Q(output)} -cc";
 #endif
 
-        int code = await RunProcessAsync(exe, args);
-        return code == 0;
+            UDebug.Log($"[CompressMeshopt] Comprimindo: {input} → {output}");
+            UDebug.Log($"[CompressMeshopt] Executando: {exe} {args}");
+
+            int code = await RunProcessAsync(exe, args);
+            bool success = code == 0 && File.Exists(output);
+            
+            if (success)
+            {
+                long inputSize = new FileInfo(input).Length;
+                long outputSize = new FileInfo(output).Length;
+                float compressionRatio = (float)outputSize / inputSize;
+                UDebug.Log($"[CompressMeshopt] ✅ Sucesso! Tamanho: {inputSize} → {outputSize} bytes (ratio: {compressionRatio:F2})");
+            }
+            else
+            {
+                UDebug.LogError($"[CompressMeshopt] ❌ Falha! Exit code: {code}, Arquivo existe: {File.Exists(output)}");
+            }
+            
+            return success;
+        }
+        catch (Exception ex)
+        {
+            UDebug.LogError($"[CompressMeshopt] ❌ Erro: {ex.Message}");
+            return false;
+        }
     }
 
 
@@ -423,31 +472,63 @@ public class ModelViewer : MonoBehaviour
 
     private async Task<bool> CompressDracoAsync(string input, string output)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        try
+        {
+            // Verifica se arquivo de entrada existe
+            if (!File.Exists(input))
+            {
+                UDebug.LogError($"[CompressDraco] Arquivo de entrada não encontrado: {input}");
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-    // 1) Caminho absoluto do .cmd
-    string cmdPath = Environment.ExpandEnvironmentVariables(@"%APPDATA%\npm\gltf-transform.cmd");
-    if (!File.Exists(cmdPath))
-    {
-        UDebug.LogError($"gltf-transform.cmd não encontrado: {cmdPath}\nInstale com: npm i -g @gltf-transform/cli");
-        return false;
-    }
+            // 1) Caminho absoluto do .cmd
+            string cmdPath = Environment.ExpandEnvironmentVariables(@"%APPDATA%\npm\gltf-transform.cmd");
+            if (!File.Exists(cmdPath))
+            {
+                UDebug.LogError($"[CompressDraco] gltf-transform.cmd não encontrado: {cmdPath}");
+                UDebug.LogError($"[CompressDraco] Instale com: npm i -g @gltf-transform/cli");
+                return false;
+            }
 
-    // 2) Normaliza caminhos para BACKSLASH e usa aspas
-    string inPath  = WinPath(Path.GetFullPath(input));
-    string outPath = WinPath(Path.GetFullPath(output));
+            // 2) Normaliza caminhos para BACKSLASH e usa aspas
+            string inPath  = WinPath(Path.GetFullPath(input));
+            string outPath = WinPath(Path.GetFullPath(output));
 
-    // 3) QUOTING CORRETO: /c ""C:\...\gltf-transform.cmd" optimize "in" "out" --compress draco"
-    string file = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-    string args = $"/c \"\"{cmdPath}\" optimize {Q(inPath)} {Q(outPath)} --compress draco\"";
+            UDebug.Log($"[CompressDraco] Comprimindo: {inPath} → {outPath}");
+
+            // 3) QUOTING CORRETO: /c ""C:\...\gltf-transform.cmd" optimize "in" "out" --compress draco"
+            string file = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+            string args = $"/c \"\"{cmdPath}\" optimize {Q(inPath)} {Q(outPath)} --compress draco\"";
 #else
-        string file = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform"; // ajuste se mudar a versão
-        string args = $"optimize {Q(input)} {Q(output)} --compress draco";
+            string file = "/home/wands/.nvm/versions/node/v22.19.0/bin/gltf-transform"; // ajuste se mudar a versão
+            string args = $"optimize {Q(input)} {Q(output)} --compress draco";
 #endif
 
-        int code = await RunProcessAsync(file, args);
-        return code == 0;
+            int code = await RunProcessAsync(file, args);
+            bool success = code == 0 && File.Exists(output);
+            
+            if (success)
+            {
+                long inputSize = new FileInfo(input).Length;
+                long outputSize = new FileInfo(output).Length;
+                float compressionRatio = (float)outputSize / inputSize;
+                UDebug.Log($"[CompressDraco] ✅ Sucesso! Tamanho: {inputSize} → {outputSize} bytes (ratio: {compressionRatio:F2})");
+            }
+            else
+            {
+                UDebug.LogError($"[CompressDraco] ❌ Falha! Exit code: {code}, Arquivo existe: {File.Exists(output)}");
+            }
+            
+            return success;
+        }
+        catch (Exception ex)
+        {
+            UDebug.LogError($"[CompressDraco] ❌ Erro: {ex.Message}");
+            return false;
+        }
     }
 
 
@@ -735,24 +816,67 @@ public class ModelViewer : MonoBehaviour
     // Carrega o modelo sem rodar métricas (o Wizard cuida das métricas)
     public async Task<bool> LoadOnlyAsync(string modelName, string variant)
     {
-        string path = ResolvePath(modelName, variant);
-        if (!System.IO.File.Exists(path)) return false;
+        try
+        {
+            string path = ResolvePath(modelName, variant);
+            UDebug.Log($"[LoadOnlyAsync] Carregando: {modelName} ({variant})");
+            UDebug.Log($"[LoadOnlyAsync] Caminho: {path}");
+            
+            if (!System.IO.File.Exists(path))
+            {
+                UDebug.LogError($"[LoadOnlyAsync] ❌ Arquivo não encontrado: {path}");
+                return false;
+            }
 
-        ClearSpawn();
+            // Verifica tamanho do arquivo
+            long fileSize = new System.IO.FileInfo(path).Length;
+            UDebug.Log($"[LoadOnlyAsync] Tamanho do arquivo: {fileSize} bytes");
 
-        _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
-        _currentContainer.transform.SetParent(spawnParent, false);
+            ClearSpawn();
 
-        var gltf = _currentContainer.AddComponent<GltfAsset>();
-        gltf.LoadOnStartup = false;
+            _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
+            _currentContainer.transform.SetParent(spawnParent, false);
 
-        string url = "file://" + path.Replace("\\", "/");
-        bool ok = false;
-        try { ok = await gltf.Load(url); }
-        catch (System.SystemException ex) { UDebug.LogError(ex); ok = false; }
+            var gltf = _currentContainer.AddComponent<GltfAsset>();
+            gltf.LoadOnStartup = false;
 
-        if (!ok) ClearSpawn();
-        return ok;
+            // URL correta para Unity
+            string url = "file://" + path.Replace("\\", "/");
+            UDebug.Log($"[LoadOnlyAsync] URL: {url}");
+
+            bool ok = false;
+            try 
+            { 
+                UDebug.Log($"[LoadOnlyAsync] Iniciando carregamento GLTF...");
+                ok = await gltf.Load(url);
+                UDebug.Log($"[LoadOnlyAsync] Carregamento concluído: {(ok ? "✅ Sucesso" : "❌ Falha")}");
+            }
+            catch (System.SystemException ex) 
+            { 
+                UDebug.LogError($"[LoadOnlyAsync] ❌ Erro no carregamento: {ex.Message}");
+                UDebug.LogError($"[LoadOnlyAsync] Stack trace: {ex.StackTrace}");
+                ok = false; 
+            }
+
+            if (!ok) 
+            {
+                UDebug.LogError($"[LoadOnlyAsync] ❌ Limpando spawn devido ao erro");
+                ClearSpawn(); 
+            }
+            else
+            {
+                UDebug.Log($"[LoadOnlyAsync] ✅ Modelo carregado com sucesso!");
+            }
+            
+            return ok;
+        }
+        catch (System.Exception ex)
+        {
+            UDebug.LogError($"[LoadOnlyAsync] ❌ Erro geral: {ex.Message}");
+            UDebug.LogError($"[LoadOnlyAsync] Stack trace: {ex.StackTrace}");
+            ClearSpawn();
+            return false;
+        }
     }
 
 }
