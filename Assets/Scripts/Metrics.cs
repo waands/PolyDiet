@@ -48,7 +48,7 @@ public class Metrics : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
-    private string GetOutputDir()
+    public string GetOutputDir()
     {
         if (saveInsideProject)
         {
@@ -56,6 +56,13 @@ public class Metrics : MonoBehaviour
             return Path.Combine(projectRoot, projectSubDir);
         }
         return Path.Combine(Application.persistentDataPath, "Benchmarks");
+    }
+
+    public string GetCsvPathPublic()
+    {
+        var dir = GetOutputDir();
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, csvFileName);
     }
 
 

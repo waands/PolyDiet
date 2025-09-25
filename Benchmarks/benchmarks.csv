@@ -4,5 +4,5 @@ timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_
 2025-09-24T21:03:18-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","original",0.807,115.109,425.006,199.84,104.06,true
 2025-09-24T21:03:38-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","draco",0.059,2194.796,415.618,25.54,25.54,true
 2025-09-24T21:04:10-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","original",0.245,57.625,427.915,184.05,84.19,true
-2025-09-24T21:04:15-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,72.992,426.495,199.54,96.75,true
+2025-09-24T22:40:32-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,374.955,449.787,236,45.43,true
 2025-09-24T21:04:21-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","draco",0.052,95.388,426.414,207.94,101.46,true
