@@ -1,11 +1,10 @@
-timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok
 
 2025-09-24T21:03:31-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","meshopt",0.092,68.026,415.18,35.43,25.54,true
 2025-09-24T21:03:18-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","original",0.807,115.109,425.006,199.84,104.06,true
 2025-09-24T21:03:38-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","duck2","draco",0.059,2194.796,415.618,25.54,25.54,true
 2025-09-24T21:04:10-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","original",0.245,57.625,427.915,184.05,84.19,true
-2025-09-25T17:46:56-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,147.941,369.821,62.2,39.65,true
+2025-10-01T18:11:49-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","Duck","meshopt",0.114,604.777,438.901,65.18,29.76,true
 2025-09-24T21:04:21-03:00,"WindowsEditor","6000.2.4f1","ModelViewer","Duck","draco",0.052,95.388,426.414,207.94,101.46,true
 2025-09-25T12:01:45-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","stanford-bunny","original",0.797,159.705,356.502,61.53,52.37,true
-2025-09-25T12:01:51-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","stanford-bunny","meshopt",0.2,70.309,336.636,60.16,51.23,true
+2025-10-01T18:08:08-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","stanford-bunny","meshopt",0.2,49.986,404.023,64.27,15.58,true
 2025-09-25T12:01:56-03:00,"LinuxEditor","6000.2.4f1","ModelViewer","stanford-bunny","draco",0.093,90.507,336.123,60.07,53.95,true

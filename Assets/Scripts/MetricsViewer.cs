@@ -57,7 +57,10 @@ public class MetricsViewer : MonoBehaviour
         if (buttonClearAll)  buttonClearAll.onClick.AddListener(() => SetAllVariantChips(false));
     }
 
-    void OnEnable() => Refresh();
+    void OnEnable() 
+    { 
+        Refresh(); 
+    }
 
     void OpenFolder()
     {
@@ -255,6 +258,22 @@ public class MetricsViewer : MonoBehaviour
 
     void ClosePanel()
     {
+        UIInputLock.Unlock(this);
+        if (panel != null)
+            panel.SetActive(false);
+    }
+    
+    // Métodos públicos para controle manual do bloqueio
+    public void ShowPanel()
+    {
+        UIInputLock.Lock(this);
+        if (panel != null)
+            panel.SetActive(true);
+    }
+    
+    public void HidePanel()
+    {
+        UIInputLock.Unlock(this);
         if (panel != null)
             panel.SetActive(false);
     }

@@ -32,6 +32,10 @@ public class SimpleOrbitCamera : MonoBehaviour
     public float defaultPitchOnFit = 20f;
     public bool adjustClipPlanes = true;   // ajusta near/far conforme o modelo
 
+    [Header("UI Lock")]
+    public bool lockWhenUIOpen = true;   // deixe ON
+    public UnityEngine.CanvasGroup[] lockPanels; // opcional: arraste aqui os CanvasGroup dos painéis
+
     // Estado interno
     float _yaw;
     float _pitch = 15f;
@@ -61,35 +65,40 @@ public class SimpleOrbitCamera : MonoBehaviour
     {
         Vector3 pivot = (target ? target.position : Vector3.zero) + _panOffset;
 
-        // Rotação com botão esquerdo do mouse
-        if (Input.GetMouseButton(0))
+        bool blocked = lockWhenUIOpen && (UIInputLock.IsLocked || IsAnyPanelBlocking());
+
+        // Rotação (mouse esq), Pan (mouse dir), Zoom (scroll) — só quando NÃO bloqueado
+        if (!blocked)
         {
-            _yaw += Input.GetAxis("Mouse X") * rotateSpeed * Time.deltaTime;
-            _pitch -= Input.GetAxis("Mouse Y") * rotateSpeed * Time.deltaTime;
-            _pitch = Mathf.Clamp(_pitch, pitchClamp.x, pitchClamp.y);
+            // Rotação
+            if (Input.GetMouseButton(0))
+            {
+                _yaw += Input.GetAxis("Mouse X") * rotateSpeed * Time.deltaTime;
+                _pitch -= Input.GetAxis("Mouse Y") * rotateSpeed * Time.deltaTime;
+                _pitch = Mathf.Clamp(_pitch, pitchClamp.x, pitchClamp.y);
+            }
+
+            // Pan
+            if (enablePanning && Input.GetMouseButton(1))
+            {
+                Vector3 right = transform.right;
+                Vector3 up = transform.up;
+                
+                Vector3 panDelta = (-Input.GetAxis("Mouse X") * right - Input.GetAxis("Mouse Y") * up) * panSpeed * Time.deltaTime;
+                _panOffset += panDelta;
+            }
+
+            // Zoom
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(scroll) > 0.0001f)
+            {
+                distance = Mathf.Clamp(distance - scroll * zoomSpeed, minDistance, maxDistance);
+            }
         }
 
-        // Pan com botão direito do mouse
-        if (enablePanning && Input.GetMouseButton(1))
-        {
-            Vector3 right = transform.right;
-            Vector3 up = transform.up;
-            
-            Vector3 panDelta = (-Input.GetAxis("Mouse X") * right - Input.GetAxis("Mouse Y") * up) * panSpeed * Time.deltaTime;
-            _panOffset += panDelta;
-        }
-
-        // Zoom com scroll
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (Mathf.Abs(scroll) > 0.0001f)
-        {
-            distance = Mathf.Clamp(distance - scroll * zoomSpeed, minDistance, maxDistance);
-        }
-
-        // Aplicar transformação
+        // Sempre aplica a pose atual (mesmo bloqueado)
         Quaternion rot = Quaternion.Euler(_pitch, _yaw, 0f);
         Vector3 pos = pivot - rot * Vector3.forward * distance;
-
         transform.SetPositionAndRotation(pos, rot);
     }
 
@@ -131,8 +140,8 @@ public class SimpleOrbitCamera : MonoBehaviour
         fitDistance = Mathf.Clamp(fitDistance, minDistance, maxDistance);
 
         // Debug info (pode remover depois)
-        Debug.Log($"[AutoFit] Model bounds: {b.size}, Max dimension: {maxModelDimension}, " +
-                 $"DistV: {distV:F2}, DistH: {distH:F2}, Final distance: {fitDistance:F2}");
+        //Debug.Log($"[AutoFit] Model bounds: {b.size}, Max dimension: {maxModelDimension}, " +
+        //         $"DistV: {distV:F2}, DistH: {distH:F2}, Final distance: {fitDistance:F2}");
 
         // 4) Ângulos
         float newYaw   = autoFitKeepAngles ? _yaw   : defaultYawOnFit;
@@ -235,5 +244,18 @@ public class SimpleOrbitCamera : MonoBehaviour
         {
             AutoFitToModel();
         }
+    }
+
+    // Se preferir também bloquear por "painéis ativos" específicos (CanvasGroup)
+    public bool IsAnyPanelBlocking()
+    {
+        if (lockPanels == null) return false;
+        for (int i = 0; i < lockPanels.Length; i++)
+        {
+            var cg = lockPanels[i];
+            if (cg && cg.gameObject.activeInHierarchy && cg.interactable && cg.blocksRaycasts)
+                return true;
+        }
+        return false;
     }
 }

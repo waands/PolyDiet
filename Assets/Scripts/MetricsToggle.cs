@@ -71,12 +71,35 @@ public class MetricsToggle : MonoBehaviour
             return;
         }
         
-        bool newState = !metricsPanel.activeSelf;
-        metricsPanel.SetActive(newState);
-        
-        if (enableDebug)
+        // Tenta usar o MetricsViewer se disponível
+        var metricsViewer = metricsPanel.GetComponent<MetricsViewer>();
+        if (metricsViewer != null)
         {
-            Debug.Log($"[MetricsToggle] Painel de métricas {(newState ? "MOSTRADO" : "OCULTADO")}", this);
+            bool newState = !metricsPanel.activeSelf;
+            if (newState)
+            {
+                metricsViewer.ShowPanel();
+            }
+            else
+            {
+                metricsViewer.HidePanel();
+            }
+            
+            if (enableDebug)
+            {
+                Debug.Log($"[MetricsToggle] Painel de métricas {(newState ? "MOSTRADO" : "OCULTADO")} via MetricsViewer", this);
+            }
+        }
+        else
+        {
+            // Fallback: usa SetActive diretamente
+            bool newState = !metricsPanel.activeSelf;
+            metricsPanel.SetActive(newState);
+            
+            if (enableDebug)
+            {
+                Debug.Log($"[MetricsToggle] Painel de métricas {(newState ? "MOSTRADO" : "OCULTADO")} via SetActive", this);
+            }
         }
     }
     
@@ -84,7 +107,15 @@ public class MetricsToggle : MonoBehaviour
     {
         if (metricsPanel != null)
         {
-            metricsPanel.SetActive(true);
+            var metricsViewer = metricsPanel.GetComponent<MetricsViewer>();
+            if (metricsViewer != null)
+            {
+                metricsViewer.ShowPanel();
+            }
+            else
+            {
+                metricsPanel.SetActive(true);
+            }
             if (enableDebug) Debug.Log("[MetricsToggle] Painel de métricas MOSTRADO", this);
         }
     }
@@ -93,7 +124,15 @@ public class MetricsToggle : MonoBehaviour
     {
         if (metricsPanel != null)
         {
-            metricsPanel.SetActive(false);
+            var metricsViewer = metricsPanel.GetComponent<MetricsViewer>();
+            if (metricsViewer != null)
+            {
+                metricsViewer.HidePanel();
+            }
+            else
+            {
+                metricsPanel.SetActive(false);
+            }
             if (enableDebug) Debug.Log("[MetricsToggle] Painel de métricas OCULTADO", this);
         }
     }

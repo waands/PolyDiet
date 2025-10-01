@@ -401,11 +401,17 @@ public class WizardController : MonoBehaviour
         {
             hudController.HideModelSelector();
         }
+        UIInputLock.Lock(this);
         _ = Fade(true);  
     }
-    public void Hide()   { _ = Fade(false); }
+    public void Hide()   
+    { 
+        UIInputLock.Unlock(this);
+        _ = Fade(false); 
+    }
     void   HideImmediate(){
         if (panel == null) return;
+        UIInputLock.Unlock(this);
         var cg = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
         cg.alpha = 0; cg.blocksRaycasts = false; cg.interactable = false;
         panel.SetActive(false);
