@@ -38,6 +38,8 @@ public class CompareSplitView : MonoBehaviour
         SafeSetActive(compositeImage, false);
         SafeSetActive(splitLine, false);
         SafeSetActive(splitSlider, false); // ADICIONADO: inicia slider desativado
+        SafeSetActive(labelLeft, false);   // Desativa label esquerdo
+        SafeSetActive(labelRight, false);  // Desativa label direito
         if (camA) camA.enabled = false;
         if (camB) camB.enabled = false;
         if (viewCamera) viewCamera.enabled = true; // desenha o display no 1×
@@ -86,6 +88,8 @@ public class CompareSplitView : MonoBehaviour
             SafeSetActive(compositeImage, true);
             SafeSetActive(splitLine, true);
             SafeSetActive(splitSlider, true); // ADICIONADO: ativa o slider
+            SafeSetActive(labelLeft, true);   // Ativa label esquerdo
+            SafeSetActive(labelRight, true);  // Ativa label direito
             if (compositeImage) compositeImage.texture = _rtA; // qualquer; o shader usa _TexA/_TexB
 
             // roteia render para RTs
@@ -108,6 +112,8 @@ public class CompareSplitView : MonoBehaviour
             SafeSetActive(compositeImage, false);
             SafeSetActive(splitLine, false);
             SafeSetActive(splitSlider, false); // ADICIONADO: desativa o slider
+            SafeSetActive(labelLeft, false);   // Desativa label esquerdo
+            SafeSetActive(labelRight, false);  // Desativa label direito
 
             if (camA) { camA.targetTexture = null; camA.enabled = false; }
             if (camB) { camB.targetTexture = null; camB.enabled = false; }
@@ -205,6 +211,7 @@ public class CompareSplitView : MonoBehaviour
     static void SafeSetActive(Graphic g, bool on) { if (g) g.gameObject.SetActive(on); }
     static void SafeSetActive(Transform t, bool on) { if (t) t.gameObject.SetActive(on); }
     static void SafeSetActive(Slider s, bool on) { if (s) s.gameObject.SetActive(on); } // ADICIONADO: para Slider
+    static void SafeSetActive(TMPro.TextMeshProUGUI txt, bool on) { if (txt) txt.gameObject.SetActive(on); } // ADICIONADO: para TextMeshPro
 
     // Métodos de compatibilidade para o HUDController
     public void SetSideInfo(string left, string right)
@@ -220,7 +227,17 @@ public class CompareSplitView : MonoBehaviour
 
     public void ClearLabels()
     {
-        // Método vazio para compatibilidade
+        // Limpa e desativa os labels
+        if (labelLeft) 
+        {
+            labelLeft.text = "";
+            labelLeft.gameObject.SetActive(false);
+        }
+        if (labelRight) 
+        {
+            labelRight.text = "";
+            labelRight.gameObject.SetActive(false);
+        }
     }
 
     public void ForceCleanupCameras()
@@ -240,7 +257,8 @@ public class CompareSplitView : MonoBehaviour
             var orbitScript = mainOrbitCamera.GetComponent<SimpleOrbitCamera>();
             if (orbitScript != null)
             {
-                orbitScript.ResetCamera();
+                orbitScript.ResetAngles(30f, 20f); // Reseta ângulos para padrão
+                orbitScript.FrameTarget(); // Enquadra o modelo
             }
         }
     }

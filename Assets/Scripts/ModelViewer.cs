@@ -234,6 +234,37 @@ public class ModelViewer : MonoBehaviour
         }
     }
 
+    // Duplica a escala de modelos muito pequenos
+    private void NormalizeModelScale(GameObject container)
+    {
+        if (container == null) return;
+
+        // Calcula o bounding box do modelo
+        var renderers = container.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0) return;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+
+        // Tamanho atual do modelo (maior dimensão)
+        float currentSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
+        
+        // Se menor que 0.5 unidades, duplica a escala (2x)
+        const float minSize = 0.5f;
+        
+        if (currentSize < 1e-6f) return; // Evita divisão por zero
+
+        if (currentSize < minSize)
+        {
+            // Simplesmente duplica a escala
+            float scaleFactor = 3.0f;
+            container.transform.localScale = Vector3.one * scaleFactor;
+            UDebug.Log($"[AutoScale] Modelo pequeno detectado (tamanho: {currentSize:F4}). " +
+                      $"Duplicando escala (2x) → novo tamanho: {currentSize * scaleFactor:F4}");
+        }
+    }
+
     // ======== RUNTIME LOAD ========
 
     private async Task OnClickLoadAsync()
@@ -297,6 +328,9 @@ public class ModelViewer : MonoBehaviour
                 return;
             }
 
+            // Normaliza a escala do modelo se necessário
+            NormalizeModelScale(_currentContainer);
+
             // Medir FPS após carregamento bem-sucedido
             if (Metrics.Instance != null && ok)
             {
@@ -327,10 +361,10 @@ public class ModelViewer : MonoBehaviour
                     hudController.NotifyModelLoaded(modelName, variant);
                 }
                 
-                // Define o target da câmera para o modelo carregado
+                // Define o target da câmera para o modelo carregado com auto-fit
                 if (orbitCamera != null && _currentContainer != null)
                 {
-                    orbitCamera.SetTarget(_currentContainer.transform);
+                    orbitCamera.SetTarget(_currentContainer.transform, autoFrame: true);
                 }
             }
 
@@ -747,7 +781,6 @@ public class ModelViewer : MonoBehaviour
         var go = new GameObject($"GLTF_{modelName}_{variant}");
         go.transform.SetParent(parent, false);
         go.layer = layer;
-        SetLayerRecursively(go, layer);
 
         var asset = go.AddComponent<GLTFast.GltfAsset>();
         asset.LoadOnStartup = false;
@@ -757,21 +790,47 @@ public class ModelViewer : MonoBehaviour
         try { ok = await asset.Load(url); } catch { ok = false; }
         if (!ok) { Destroy(go); return null; }
 
+        // IMPORTANTE: Aplicar layer DEPOIS do carregamento, quando todos os filhos existem
+        SetLayerRecursively(go, layer);
+        UDebug.Log($"[LoadIntoAsync] Layer {layer} aplicada recursivamente a {go.name} e todos os filhos");
+
+        // Normaliza a escala do modelo se necessário
+        NormalizeModelScale(go);
+
         return go;
     }
 
     static void SetLayerRecursively(GameObject root, int layer)
     {
+        if (root == null) return;
+        
         root.layer = layer;
         var t = root.transform;
-        for (int i = 0; i < t.childCount; i++)
+        
+        // Debug: mostra quantos filhos tem
+        int childCount = t.childCount;
+        if (childCount > 0)
+        {
+            UDebug.Log($"[SetLayerRecursively] {root.name}: definindo layer {layer} para {childCount} filhos");
+        }
+        
+        for (int i = 0; i < childCount; i++)
+        {
             SetLayerRecursively(t.GetChild(i).gameObject, layer);
+        }
     }
 
     // ======== MÉTODOS PÚBLICOS PARA WIZARD ========
 
     // Permite outro script pedir um re-scan
     public void RescanModels() => ScanModelsAndPopulateUI();
+
+    // Limpa modelos carregados (útil antes de entrar no modo Compare)
+    public void ClearLoadedModels()
+    {
+        ClearSpawn();
+        UDebug.Log("[ModelViewer] Modelos limpos (chamado externamente)");
+    }
 
     // Expor nome e variantes do modelo atual/qualquer
     public string GetSelectedModelNamePublic() => GetSelectedModelName();
@@ -811,6 +870,9 @@ public class ModelViewer : MonoBehaviour
             ClearSpawn();
             return false;
         }
+
+        // Normaliza a escala do modelo se necessário
+        NormalizeModelScale(_currentContainer);
 
         // mede FPS + upsert CSV
         if (Metrics.Instance != null)
@@ -971,6 +1033,9 @@ public class ModelViewer : MonoBehaviour
             else
             {
                 UDebug.Log($"[LoadOnlyAsync] ✅ Modelo carregado com sucesso!");
+                
+                // Normaliza a escala do modelo se necessário
+                NormalizeModelScale(_currentContainer);
             }
             
             return ok;

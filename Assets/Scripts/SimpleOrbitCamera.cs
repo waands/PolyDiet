@@ -2,285 +2,161 @@ using UnityEngine;
 
 public class SimpleOrbitCamera : MonoBehaviour
 {
-    [Header("Target")]
-    public Transform target;     // deixe vazio para orbitar (0,0,0)
+    [Header("Target / Focus")]
+    public Transform target;                 // pivô (use o root do modelo instanciado)
+    [Tooltip("Margem multiplicativa no AutoFit (1.1–1.6).")]
+    public float fitMargin = 1.3f;
+
+    [Header("Orbit")]
+    public float yaw   = 30f;
+    public float pitch = 20f;
+    public Vector2 pitchLimits = new Vector2(-80f, 80f);
+    public float orbitSpeed = 180f;          // graus/seg
     
     [Header("Distance")]
     public float distance = 4f;
-    public float minDistance = 0.5f;
-    public float maxDistance = 20f;
-    public float zoomSpeed = 4f;
-    
-    [Header("Rotation")]
-    public float rotateSpeed = 300f;
-    public Vector2 pitchClamp = new Vector2(-80f, 80f);
+    public float minDistance = 0.2f;
+    public float maxDistance = 100f;
+    public float zoomResponsiveness = 1.0f;  // 1 = direto, >1 mais responsivo
+    public float zoomScale = 0.2f;           // fração da distância por notch
     
     [Header("Pan")]
-    public float panSpeed = 8f;
-    public bool enablePanning = true;
-    
-    [Header("Auto Positioning")]
-    public bool autoFitToModel = true;
-    public float autoFitMargin = 1.5f;
-    
-    [Header("Auto Fit (novo)")]
-    public bool autoFitAnimated = true;
-    public float autoFitDuration = 0.35f;
-    public AnimationCurve autoFitEase = AnimationCurve.EaseInOut(0,0,1,1);
-    public bool autoFitKeepAngles = true;  // mantém yaw/pitch atuais ao dar autofit?
-    public float defaultYawOnFit = 30f;    // se não manter ângulos, usa esses
-    public float defaultPitchOnFit = 20f;
-    public bool adjustClipPlanes = true;   // ajusta near/far conforme o modelo
+    public bool  enablePan = true;
+    public float panSpeed = 1.0f;            // 1 = natural; aumente se quiser mais rápido
+
+    [Header("Stability / Safety")]
+    public bool keepNearModel = true;        // "coleira" de pan pra não se perder
+    [Range(1f, 10f)] public float panLeashRadiuses = 4f; // quantos "raios" do modelo
+    public bool autoAdjustClipPlanes = true;
 
     [Header("UI Lock")]
-    public bool lockWhenUIOpen = true;   // deixe ON
-    public UnityEngine.CanvasGroup[] lockPanels; // opcional: arraste aqui os CanvasGroup dos painéis
+    public bool respectUILock = true;        // usa UIInputLock.IsLocked
+    public CanvasGroup[] lockPanels;         // painéis que bloqueiam input
 
-    // Estado interno
-    float _yaw;
-    float _pitch = 15f;
-    Vector3 _panOffset = Vector3.zero;
-    
-    // Valores padrão para reset
-    float _defaultYaw;
-    float _defaultPitch = 15f;
-    float _defaultDistance;
-    Vector3 _defaultPanOffset = Vector3.zero;
+    // estado interno
+    Vector3 _focus;                  // ponto olhando
+    Bounds  _lastBounds; bool _hasBounds;
+    float   _distance;               // distância efetiva (suavizada)
+    Camera  _cam;
 
-    void Start()
+    void Awake()
     {
-        // Salva valores padrão para reset
-        _defaultYaw = _yaw;
-        _defaultPitch = _pitch;
-        _defaultDistance = distance;
-        
-        // Posicionamento inicial automático
-        if (autoFitToModel)
-        {
-            AutoFitToModel();
-        }
+        _cam = GetComponent<Camera>();
+        _distance = Mathf.Clamp(distance, minDistance, maxDistance);
+        if (target) FrameTarget(); else _focus = Vector3.zero;
     }
 
     void LateUpdate()
     {
-        Vector3 pivot = (target ? target.position : Vector3.zero) + _panOffset;
+        bool blocked = respectUILock && (IsUILocked() || IsAnyPanelBlocking());
 
-        bool blocked = lockWhenUIOpen && (UIInputLock.IsLocked || IsAnyPanelBlocking());
-
-        // Rotação (mouse esq), Pan (mouse dir), Zoom (scroll) — só quando NÃO bloqueado
+        // ===== leitura de input (driver único) =====
         if (!blocked)
         {
-            // Rotação orbital melhorada
+            // Orbit (LMB)
             if (Input.GetMouseButton(0))
             {
-                float mouseX = Input.GetAxis("Mouse X");
-                float mouseY = Input.GetAxis("Mouse Y");
-                
-                // Rotação horizontal (yaw) - gira ao redor do objeto
-                _yaw += mouseX * rotateSpeed * Time.deltaTime;
-                
-                // Rotação vertical (pitch) - move para cima/baixo
-                _pitch -= mouseY * rotateSpeed * Time.deltaTime;
-                _pitch = Mathf.Clamp(_pitch, pitchClamp.x, pitchClamp.y);
-                
-                // Log para debug (remova se não precisar)
-                // Debug.Log($"Orbit: Yaw={_yaw:F1}°, Pitch={_pitch:F1}°, Distance={distance:F1}");
+                yaw   += Input.GetAxis("Mouse X") * orbitSpeed * Time.deltaTime;
+                pitch -= Input.GetAxis("Mouse Y") * orbitSpeed * Time.deltaTime;
+                pitch  = Mathf.Clamp(pitch, pitchLimits.x, pitchLimits.y);
             }
 
-            // Pan melhorado - move o centro de órbita
-            if (enablePanning && Input.GetMouseButton(1))
+            // Pan (RMB)
+            if (enablePan && Input.GetMouseButton(1))
             {
-                // Usa a orientação atual da câmera para determinar direções
-                Vector3 currentPos = CalculateSphericalPosition(pivot, _yaw, _pitch, distance);
-                Vector3 panLookDirection = (pivot - currentPos).normalized;
-                Vector3 right = Vector3.Cross(panLookDirection, Vector3.up).normalized;
-                Vector3 up = Vector3.Cross(right, panLookDirection).normalized;
-                
-                // Pan relativo à vista atual
-                Vector3 panDelta = (-Input.GetAxis("Mouse X") * right - Input.GetAxis("Mouse Y") * up) * panSpeed * Time.deltaTime;
-                _panOffset += panDelta;
+                // Baseado na escala de imagem: pan proporcional à distância/FOV
+                float vFovRad = (_cam ? _cam.fieldOfView : 60f) * Mathf.Deg2Rad;
+                float pixelsToWorld = Mathf.Tan(vFovRad * 0.5f) * _distance * 2f / Mathf.Max(1, Screen.height);
+                float k = panSpeed * pixelsToWorld * 100f; // 100 ~ sensibilidade "boa"
+                Vector3 right = transform.right;
+                Vector3 up    = transform.up;
+                _focus += (-Input.GetAxis("Mouse X") * right - Input.GetAxis("Mouse Y") * up) * k;
             }
 
-            // Zoom
+            // Zoom (scroll), proporcional à distância
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (Mathf.Abs(scroll) > 0.0001f)
+            if (Mathf.Abs(scroll) > 1e-4f)
             {
-                distance = Mathf.Clamp(distance - scroll * zoomSpeed, minDistance, maxDistance);
+                float step = (_distance * zoomScale + 0.25f) * (-scroll) * zoomResponsiveness;
+                _distance = Mathf.Clamp(_distance + step, minDistance, maxDistance);
             }
         }
 
-        // Sempre aplica a pose atual (mesmo bloqueado)
-        // Implementação melhorada de órbita esférica
-        Vector3 sphericalPos = CalculateSphericalPosition(pivot, _yaw, _pitch, distance);
-        
-        // A câmera sempre olha para o pivot (centro do objeto)
-        Vector3 lookDirection = (pivot - sphericalPos).normalized;
-        Quaternion lookRotation = Quaternion.LookRotation(lookDirection);
-        
-        transform.SetPositionAndRotation(sphericalPos, lookRotation);
-    }
-    
-    // Calcula posição esférica ao redor do pivot
-    Vector3 CalculateSphericalPosition(Vector3 center, float yaw, float pitch, float radius)
-    {
-        // Converte ângulos para radianos
-        float yawRad = yaw * Mathf.Deg2Rad;
-        float pitchRad = pitch * Mathf.Deg2Rad;
-        
-        // Coordenadas esféricas para cartesianas
-        float x = radius * Mathf.Cos(pitchRad) * Mathf.Sin(yawRad);
-        float y = radius * Mathf.Sin(pitchRad);
-        float z = radius * Mathf.Cos(pitchRad) * Mathf.Cos(yawRad);
-        
-        return center + new Vector3(x, y, z);
-    }
-
-    // Posicionamento automático baseado no modelo carregado
-    public void AutoFitToModel()
-    {
-        if (target == null) return;
-
-        // 1) Bounds do modelo
-        Bounds b = CalculateModelBounds();
-        if (b.size.sqrMagnitude < 1e-6f) return;
-
-        // 2) Novo pivot no centro do modelo (ajusta panOffset)
-        Vector3 worldPivot = target ? target.position : Vector3.zero;
-        Vector3 newPanOffset = b.center - worldPivot;
-
-        // 3) Distância ideal pelo FOV (cabe na vertical E horizontal)
-        Camera cam = GetComponent<Camera>() != null ? GetComponent<Camera>() : Camera.main;
-        if (cam == null) return;
-
-        // vertical/horizontal half-FOV (em rad)
-        float vFov = cam.fieldOfView * Mathf.Deg2Rad;
-        float hFov = 2f * Mathf.Atan(Mathf.Tan(vFov * 0.5f) * cam.aspect);
-
-        Vector3 ext = b.extents; // metade do tamanho em cada eixo
-        float radius = ext.magnitude;
-
-        // Distância necessária para caber verticalmente/horizontalmente
-        // CORREÇÃO: Usar a maior dimensão do modelo para garantir que cabe completamente
-        float maxModelDimension = Mathf.Max(ext.x, ext.y, ext.z);
-        
-        // Distância baseada na maior dimensão e no FOV mais restritivo
-        float distV = maxModelDimension / Mathf.Tan(vFov * 0.5f);
-        float distH = maxModelDimension / Mathf.Tan(hFov * 0.5f);
-        float fitDistance = Mathf.Max(distV, distH);
-
-        // CORREÇÃO: Aplicar margem ANTES de clampar para evitar distâncias muito pequenas
-        fitDistance *= autoFitMargin;
-        fitDistance = Mathf.Clamp(fitDistance, minDistance, maxDistance);
-
-        // Debug info (pode remover depois)
-        //Debug.Log($"[AutoFit] Model bounds: {b.size}, Max dimension: {maxModelDimension}, " +
-        //         $"DistV: {distV:F2}, DistH: {distH:F2}, Final distance: {fitDistance:F2}");
-
-        // 4) Ângulos
-        float newYaw   = autoFitKeepAngles ? _yaw   : defaultYawOnFit;
-        float newPitch = autoFitKeepAngles ? _pitch : Mathf.Clamp(defaultPitchOnFit, pitchClamp.x, pitchClamp.y);
-
-        // 5) Ajuste de clip planes (opcional)
-        if (adjustClipPlanes && cam != null)
+        // ===== segurança contra "perder o alvo" =====
+        if (keepNearModel && _hasBounds)
         {
-            float near = Mathf.Max(0.01f, fitDistance - radius * 1.2f);
-            float far  = fitDistance + radius * 4f;
-            // Evite near muito alto/baixo
-            cam.nearClipPlane = Mathf.Clamp(near, 0.01f, 5f);
-            cam.farClipPlane  = Mathf.Max(cam.nearClipPlane + 10f, far);
+            float leash = _lastBounds.extents.magnitude * panLeashRadiuses;
+            Vector3 toFocus = _focus - _lastBounds.center;
+            if (toFocus.sqrMagnitude > leash * leash)
+                _focus = _lastBounds.center + toFocus.normalized * leash;
+
+            // evita distâncias absurdas por acidente
+            _distance = Mathf.Clamp(_distance, minDistance, Mathf.Max(minDistance * 2f, _lastBounds.extents.magnitude * 20f));
         }
 
-        // 6) Aplicar (com animação ou direto)
-        if (autoFitAnimated)
-            StopAllCoroutines();
+        // ===== aplica pose =====
+        Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
+        Vector3 pos = _focus + rot * (Vector3.back * _distance);
+        transform.SetPositionAndRotation(pos, rot);
+    }
 
-        if (autoFitAnimated && autoFitDuration > 0.01f)
-            StartCoroutine(CoLerpFit(newPanOffset, fitDistance, newYaw, newPitch, autoFitDuration));
-        else
+    // ===== API =====
+
+    public void FrameTarget()
+    {
+        if (!target) return;
+
+        // bounds do modelo (todos Renderers, ativos/inativos)
+        var rs = target.GetComponentsInChildren<Renderer>(true);
+        if (rs.Length == 0)
         {
-            _panOffset = newPanOffset;
-            distance   = fitDistance;
-            _yaw       = newYaw;
-            _pitch     = newPitch;
+            _focus = target.position;
+            return;
+        }
+        Bounds b = rs[0].bounds;
+        for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+
+        _lastBounds = b; _hasBounds = true;
+        _focus = b.center;
+
+        // distância por bounding sphere + FOV mínimo (garante caber em W e H)
+        float r = b.extents.magnitude;
+        if (r < 1e-4f) r = 0.5f;
+        float v = ((_cam ? _cam.fieldOfView : 60f) * Mathf.Deg2Rad) * 0.5f;
+        float h = Mathf.Atan(Mathf.Tan(v) * (_cam ? _cam.aspect : 16f/9f));
+        float halfMin = Mathf.Min(v, h);
+        float fit = r / Mathf.Sin(Mathf.Max(0.1f, halfMin)); // evita sin(0)
+        fit *= Mathf.Max(1.01f, fitMargin);
+        _distance = distance = Mathf.Clamp(fit, minDistance, maxDistance);
+
+        if (autoAdjustClipPlanes && _cam)
+        {
+            float near = Mathf.Max(0.01f, _distance - r * 1.2f);
+            float far  = _distance + r * 4f;
+            _cam.nearClipPlane = Mathf.Clamp(near, 0.01f, 5f);
+            _cam.farClipPlane  = Mathf.Max(_cam.nearClipPlane + 10f, far);
         }
     }
 
-    // Coroutine de animação suave para AutoFit
-    System.Collections.IEnumerator CoLerpFit(
-        Vector3 panTarget, float distTarget, float yawTarget, float pitchTarget, float dur)
+    public void SetTarget(Transform t, bool autoFrame = true)
     {
-        Vector3 pan0 = _panOffset;
-        float   d0   = distance;
-        float   y0   = _yaw;
-        float   p0   = _pitch;
-
-        float t = 0f;
-        while (t < dur)
-        {
-            t += Time.deltaTime;
-            float k = autoFitEase != null ? autoFitEase.Evaluate(Mathf.Clamp01(t / dur)) : (t / dur);
-
-            _panOffset = Vector3.Lerp(pan0, panTarget, k);
-            distance   = Mathf.Lerp(d0,   distTarget, k);
-            _yaw       = Mathf.LerpAngle(y0, yawTarget, k);
-            _pitch     = Mathf.Lerp(p0, pitchTarget, k);
-
-            yield return null;
-        }
-
-        _panOffset = panTarget;
-        distance   = distTarget;
-        _yaw       = yawTarget;
-        _pitch     = pitchTarget;
+        target = t;
+        if (autoFrame) FrameTarget();
     }
 
-
-    // Calcula os bounds do modelo (incluindo todos os filhos)
-    Bounds CalculateModelBounds()
+    public void ResetAngles(float newYaw = 30f, float newPitch = 20f)
     {
-        if (target == null) return new Bounds(Vector3.zero, Vector3.zero);
-
-        // Inclui inativos (true) e abrange todos os Renderers
-        var renderers = target.GetComponentsInChildren<Renderer>(true);
-        if (renderers == null || renderers.Length == 0)
-            return new Bounds(target.position, Vector3.zero);
-
-        Bounds b = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
-            b.Encapsulate(renderers[i].bounds);
-        return b;
+        yaw = newYaw;
+        pitch = Mathf.Clamp(newPitch, pitchLimits.x, pitchLimits.y);
     }
 
-    // Reset da câmera para posição padrão
-    public void ResetCamera()
+    // ===== helpers =====
+    bool IsUILocked()
     {
-        // Sempre aplica AutoFit para garantir posicionamento ideal
-        if (autoFitToModel && target != null)
-        {
-            AutoFitToModel();
-        }
-        else
-        {
-            // Fallback para valores padrão se AutoFit não estiver disponível
-            _yaw = _defaultYaw;
-            _pitch = _defaultPitch;
-            distance = _defaultDistance;
-            _panOffset = _defaultPanOffset;
-        }
+        // se não existir sua classe, comente esta linha
+        return UIInputLock.IsLocked;
     }
-
-    // Define um novo target e ajusta automaticamente
-    public void SetTarget(Transform newTarget)
-    {
-        target = newTarget;
-        if (autoFitToModel)
-        {
-            AutoFitToModel();
-        }
-    }
-
-    // Se preferir também bloquear por "painéis ativos" específicos (CanvasGroup)
-    public bool IsAnyPanelBlocking()
+    bool IsAnyPanelBlocking()
     {
         if (lockPanels == null) return false;
         for (int i = 0; i < lockPanels.Length; i++)

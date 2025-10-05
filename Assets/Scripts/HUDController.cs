@@ -121,7 +121,7 @@ public class HUDController : MonoBehaviour
         // Ajusta a câmera automaticamente para o novo modelo
         if (orbitCamera != null)
         {
-            orbitCamera.AutoFitToModel();
+            orbitCamera.FrameTarget();
         }
     }
 
@@ -157,9 +157,10 @@ public class HUDController : MonoBehaviour
             // Modo normal: apenas reset da câmera principal
             if (orbitCamera != null)
             {
-                Debug.Log("[HUD] Calling orbitCamera.ResetCamera()");
-            orbitCamera.ResetCamera();
-                Debug.Log("[HUD] orbitCamera.ResetCamera() completed");
+                Debug.Log("[HUD] Calling orbitCamera.FrameTarget()");
+                orbitCamera.ResetAngles(30f, 20f); // Reseta ângulos para padrão
+                orbitCamera.FrameTarget(); // Enquadra o modelo
+                Debug.Log("[HUD] orbitCamera reset completed");
             }
             else
             {
@@ -205,6 +206,16 @@ public class HUDController : MonoBehaviour
     public void HideComparePanel()
     {
         if (comparePanel) comparePanel.SetActive(false);
+        
+        // Se estava em modo Compare, desativa e limpa
+        if (splitView != null && splitView.compositeImage != null && 
+            splitView.compositeImage.gameObject.activeInHierarchy)
+        {
+            Debug.Log("[HUD] Exiting Compare mode - cleaning up");
+            splitView.SetCompareActive(false);
+            if (compareLoader != null) compareLoader.Clear();
+        }
+        
         UIInputLock.Unlock(this);
     }
 
@@ -386,6 +397,13 @@ public class HUDController : MonoBehaviour
 
             compareLoader.modelA = model; compareLoader.variantA = a;
             compareLoader.modelB = model; compareLoader.variantB = b;
+            
+            Debug.Log("[HUD] Clearing existing models before Compare mode");
+            // Limpa modelos anteriores do viewer para evitar renderizar instâncias duplicadas
+            if (viewer != null) 
+            {
+                viewer.ClearLoadedModels();
+            }
             
             Debug.Log("[HUD] Activating split view and loading both models");
             splitView.SetCompareActive(true);    // <- ativa overlay + RTs

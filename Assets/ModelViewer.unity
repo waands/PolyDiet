@@ -2006,7 +2006,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &254684218
 Transform:
   m_ObjectHideFlags: 0
@@ -9561,7 +9561,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &961739750
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13502,10 +13502,10 @@ RectTransform:
   - {fileID: 1159700323}
   m_Father: {fileID: 1289430430}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0}
-  m_AnchorMax: {x: 0.5, y: 0}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 0}
   m_AnchoredPosition: {x: 0, y: 9.999996}
-  m_SizeDelta: {x: 900, y: 20}
+  m_SizeDelta: {x: 0, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1345607886
 MonoBehaviour:
@@ -13605,48 +13605,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 282bb0c5349a95d40b982a3378d81e32, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
-  target: {fileID: 0}
+  target: {fileID: 2115339638}
+  fitMargin: 1.3
+  yaw: 30
+  pitch: 20
+  pitchLimits: {x: -80, y: 80}
+  orbitSpeed: 180
   distance: 0.3
   minDistance: 0.3
   maxDistance: 20
-  zoomSpeed: 1
-  rotateSpeed: 300
-  pitchClamp: {x: -20, y: 80}
+  zoomResponsiveness: 1
+  zoomScale: 0.2
+  enablePan: 1
   panSpeed: 8
-  enablePanning: 1
-  autoFitToModel: 1
-  autoFitMargin: 1.2
-  autoFitAnimated: 1
-  autoFitDuration: 0.35
-  autoFitEase:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  autoFitKeepAngles: 1
-  defaultYawOnFit: 30
-  defaultPitchOnFit: 20
-  adjustClipPlanes: 1
-  lockWhenUIOpen: 1
+  keepNearModel: 1
+  panLeashRadiuses: 4
+  autoAdjustClipPlanes: 1
+  respectUILock: 1
   lockPanels:
   - {fileID: 1898543799}
   - {fileID: 813219443}
@@ -18316,7 +18291,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   wizard: {fileID: 833198307}
   viewer: {fileID: 345529655}
-  orbitCamera: {fileID: 0}
+  orbitCamera: {fileID: 1350985119}
   buttonToggleWizard: {fileID: 260740982}
   buttonQuickLoad: {fileID: 451888946}
   quickLoadLabel: {fileID: 617714990}

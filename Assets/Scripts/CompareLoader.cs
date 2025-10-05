@@ -37,6 +37,10 @@ public class CompareLoader : MonoBehaviour
         {
             _a = await viewer.LoadIntoAsync(modelA, variantA, anchor, la);
             Debug.Log($"[CompareLoader] Model A result: {(_a != null ? "SUCCESS" : "FAILED")}");
+            if (_a != null)
+            {
+                Debug.Log($"[CompareLoader] Model A layer check: root={_a.layer}, expected={la}");
+            }
         }
         catch (System.Exception ex)
         {
@@ -49,6 +53,10 @@ public class CompareLoader : MonoBehaviour
         {
             _b = await viewer.LoadIntoAsync(modelB, variantB, anchor, lb);
             Debug.Log($"[CompareLoader] Model B result: {(_b != null ? "SUCCESS" : "FAILED")}");
+            if (_b != null)
+            {
+                Debug.Log($"[CompareLoader] Model B layer check: root={_b.layer}, expected={lb}");
+            }
         }
         catch (System.Exception ex)
         {
@@ -64,13 +72,12 @@ public class CompareLoader : MonoBehaviour
         else
         {
             Debug.Log("[CompareLoader] Both models loaded successfully, setting up positioning");
-            // opcional: alinhar rotação/escala se necessário
+            // opcional: alinhar posição e rotação (preserva escala aplicada pelo NormalizeModelScale)
             _a.transform.localPosition = Vector3.zero;
             _b.transform.localPosition = Vector3.zero;
             _a.transform.localRotation = Quaternion.identity;
             _b.transform.localRotation = Quaternion.identity;
-            _a.transform.localScale    = Vector3.one;
-            _b.transform.localScale    = Vector3.one;
+            // NÃO resetar escala aqui - preserva escala automática aplicada no LoadIntoAsync
 
             // atualizar labels do splitView
             if (splitView)
@@ -78,6 +85,9 @@ public class CompareLoader : MonoBehaviour
                 splitView.SetSideInfo($"{modelA} ({variantA})", $"{modelB} ({variantB})");
                 Debug.Log("[CompareLoader] Updated split view labels");
             }
+            
+            // Debug: verifica se as câmeras estão vendo apenas suas respectivas layers
+            DebugCameraLayers();
         }
 
         // log
@@ -96,5 +106,28 @@ public class CompareLoader : MonoBehaviour
     public void LoadBoth()
     {
         _ = LoadBothAsync();
+    }
+
+    // Helper para debug: verifica configuração das câmeras
+    public void DebugCameraLayers()
+    {
+        if (splitView && splitView.camA && splitView.camB)
+        {
+            Debug.Log($"[CompareLoader] Camera A culling mask: {splitView.camA.cullingMask} (binary: {System.Convert.ToString(splitView.camA.cullingMask, 2)})");
+            Debug.Log($"[CompareLoader] Camera B culling mask: {splitView.camB.cullingMask} (binary: {System.Convert.ToString(splitView.camB.cullingMask, 2)})");
+            
+            int la = LayerMask.NameToLayer(layerA);
+            int lb = LayerMask.NameToLayer(layerB);
+            
+            bool camASeesLayerA = (splitView.camA.cullingMask & (1 << la)) != 0;
+            bool camASeesLayerB = (splitView.camA.cullingMask & (1 << lb)) != 0;
+            bool camBSeesLayerA = (splitView.camB.cullingMask & (1 << la)) != 0;
+            bool camBSeesLayerB = (splitView.camB.cullingMask & (1 << lb)) != 0;
+            
+            Debug.Log($"[CompareLoader] Camera A vê layer {layerA}({la}): {camASeesLayerA}");
+            Debug.Log($"[CompareLoader] Camera A vê layer {layerB}({lb}): {camASeesLayerB} ← deveria ser FALSE");
+            Debug.Log($"[CompareLoader] Camera B vê layer {layerA}({la}): {camBSeesLayerA} ← deveria ser FALSE");
+            Debug.Log($"[CompareLoader] Camera B vê layer {layerB}({lb}): {camBSeesLayerB}");
+        }
     }
 }
