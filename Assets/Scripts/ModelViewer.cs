@@ -209,7 +209,7 @@ public class ModelViewer : MonoBehaviour
         return list;
     }
 
-    string GetFileNameFor(string modelName, string variant)
+    public string GetFileNameFor(string modelName, string variant)
     {
         if (string.IsNullOrEmpty(modelName)) return null;
         if (_fileByModelVariant.TryGetValue(modelName, out var map))
@@ -732,6 +732,40 @@ public class ModelViewer : MonoBehaviour
         
         result.Add(currentField); // adicionar último campo
         return result.ToArray();
+    }
+
+    // ======== MÉTODO PARA COMPARAÇÃO ========
+
+    public async System.Threading.Tasks.Task<GameObject> LoadIntoAsync(string modelName, string variant, Transform parent, int layer)
+    {
+        string fileName = GetFileNameFor(modelName, variant) ?? "model.glb";
+        string path = System.IO.Path.Combine(UApp.streamingAssetsPath, "Models", modelName, variant, fileName);
+        
+        if (!System.IO.File.Exists(path)) return null;
+
+        // instancia container
+        var go = new GameObject($"GLTF_{modelName}_{variant}");
+        go.transform.SetParent(parent, false);
+        go.layer = layer;
+        SetLayerRecursively(go, layer);
+
+        var asset = go.AddComponent<GLTFast.GltfAsset>();
+        asset.LoadOnStartup = false;
+        string url = "file://" + path.Replace("\\", "/");
+
+        bool ok = false;
+        try { ok = await asset.Load(url); } catch { ok = false; }
+        if (!ok) { Destroy(go); return null; }
+
+        return go;
+    }
+
+    static void SetLayerRecursively(GameObject root, int layer)
+    {
+        root.layer = layer;
+        var t = root.transform;
+        for (int i = 0; i < t.childCount; i++)
+            SetLayerRecursively(t.GetChild(i).gameObject, layer);
     }
 
     // ======== MÉTODOS PÚBLICOS PARA WIZARD ========

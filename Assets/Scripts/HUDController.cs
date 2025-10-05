@@ -17,33 +17,41 @@ public class HUDController : MonoBehaviour
     public TextMeshProUGUI quickLoadLabel; // opcional: mostra status
     public Button buttonResetCamera;
     
-    [Header("Model Selector")]
-    public GameObject modelSelectorPanel;
-    public TMP_Dropdown modelDropdown;
-    public TMP_Dropdown variantDropdown;
-    public Button buttonLoadSelected;
-    public Button buttonCloseSelector;
+    // Model Selector removido - agora usa apenas comparePanel com chips
+
+    [Header("Compare (chips)")]
+    public GameObject comparePanel;
+    public TMP_Dropdown dropdownModel;     // o de modelo, dentro do ComparePanel
+    public Transform variantChipContainer; // VariantChips
+    public Toggle variantChipPrefab;       // ChipVariant (INATIVO)
+    public Button buttonCompareLoad, buttonCompareClose;
+
+    public CompareLoader compareLoader;    // _Systems/CompareRoot
+    public CompareSplitView splitView;     // arraste o mesmo do CompareRoot
 
     // Estado atual do modelo renderizado
     private string _currentLoadedModel;
     private string _currentLoadedVariant;
 
+    // estado interno
+    readonly System.Collections.Generic.List<string> _selectedVariants = new();
+    
+    // Controle de carregamento para evitar múltiplos carregamentos simultâneos
+    private bool _isLoading = false;
+
     void Awake()
     {
         if (buttonToggleWizard) buttonToggleWizard.onClick.AddListener(() => wizard?.Toggle());
-        if (buttonQuickLoad)    buttonQuickLoad.onClick.AddListener(() => _ = QuickLoadAsync());
+        if (buttonQuickLoad)    buttonQuickLoad.onClick.AddListener(ShowComparePanel); // "Preview" abre o painel inteligente
         if (buttonResetCamera)  buttonResetCamera.onClick.AddListener(() => ResetCamera());
         
-        // Model selector
-        if (buttonQuickLoad) buttonQuickLoad.onClick.AddListener(() => ShowModelSelector());
-        if (buttonLoadSelected) buttonLoadSelected.onClick.AddListener(() => _ = LoadSelectedModelAsync());
-        if (buttonCloseSelector) buttonCloseSelector.onClick.AddListener(() => HideModelSelector());
         
-        // Model dropdown change
-        if (modelDropdown) modelDropdown.onValueChanged.AddListener(_ => UpdateVariantDropdown());
+        // Compare panel
+        if (buttonCompareLoad)  buttonCompareLoad.onClick.AddListener(() => _ = OnCompareConfirmAsync());
+        if (buttonCompareClose) buttonCompareClose.onClick.AddListener(HideComparePanel);
         
-        // Hide selector initially
-        if (modelSelectorPanel) modelSelectorPanel.SetActive(false);
+        // Hide comparePanel initially
+        if (comparePanel) comparePanel.SetActive(false);
     }
 
     void Start()
@@ -74,6 +82,8 @@ public class HUDController : MonoBehaviour
         
         if (ok)
         {
+            splitView?.SetCompareActive(false); // <- mostra a View Camera
+            splitView?.ForceCleanupCameras(); // <- limpa estados para evitar travamentos
             _currentLoadedModel = model;
             _currentLoadedVariant = variant;
             UpdateCurrentModelLabel();
@@ -118,153 +128,288 @@ public class HUDController : MonoBehaviour
     // Reset da câmera para posição padrão
     void ResetCamera()
     {
-        if (orbitCamera != null)
+        Debug.Log("[HUD] Reset camera button pressed");
+        Debug.Log($"[HUD] orbitCamera: {(orbitCamera != null ? "OK" : "NULL")}");
+        Debug.Log($"[HUD] splitView: {(splitView != null ? "OK" : "NULL")}");
+
+        bool isInComparisonMode = false;
+        if (splitView != null && splitView.compositeImage != null)
         {
+            isInComparisonMode = splitView.compositeImage.gameObject.activeInHierarchy;
+            Debug.Log($"[HUD] compositeImage active: {isInComparisonMode}");
+        }
+
+        if (isInComparisonMode)
+        {
+            Debug.Log("[HUD] In comparison mode - resetting all cameras together");
+            if (splitView != null)
+            {
+                splitView.ResetAllComparisonCameras();
+            }
+            else
+            {
+                Debug.LogError("[HUD] splitView is null!");
+            }
+        }
+        else
+        {
+            Debug.Log("[HUD] In normal mode - resetting main camera only");
+            // Modo normal: apenas reset da câmera principal
+            if (orbitCamera != null)
+            {
+                Debug.Log("[HUD] Calling orbitCamera.ResetCamera()");
             orbitCamera.ResetCamera();
-        }
-    }
-
-    // ============ MODEL SELECTOR ============
-
-    void ShowModelSelector()
-    {
-        if (modelSelectorPanel == null) return;
-        
-        // Fecha o wizard se estiver aberto
-        if (wizard != null && wizard.panel != null && wizard.panel.activeSelf)
-        {
-            wizard.Hide();
-        }
-        
-        PopulateModelDropdown();
-        SyncWithModelViewer();
-        modelSelectorPanel.SetActive(true);
-    }
-
-    public void HideModelSelector()
-    {
-        if (modelSelectorPanel) modelSelectorPanel.SetActive(false);
-    }
-
-    void SyncWithModelViewer()
-    {
-        if (viewer == null || modelDropdown == null || variantDropdown == null) return;
-
-        // Sincroniza com o modelo atualmente selecionado no ModelViewer
-        string currentModel = viewer.GetCurrentSelectedModel();
-        string currentVariant = viewer.GetCurrentSelectedVariant();
-
-        if (!string.IsNullOrEmpty(currentModel))
-        {
-            // Encontra o índice do modelo atual no dropdown
-            for (int i = 0; i < modelDropdown.options.Count; i++)
-            {
-                if (modelDropdown.options[i].text == currentModel)
-                {
-                    modelDropdown.value = i;
-                    break;
-                }
+                Debug.Log("[HUD] orbitCamera.ResetCamera() completed");
             }
-            
-            // Atualiza as variantes
-            UpdateVariantDropdown();
-            
-            // Sincroniza com a variante atual
-            if (!string.IsNullOrEmpty(currentVariant))
+            else
             {
-                for (int i = 0; i < variantDropdown.options.Count; i++)
-                {
-                    if (variantDropdown.options[i].text == currentVariant)
-                    {
-                        variantDropdown.value = i;
-                        variantDropdown.RefreshShownValue();
-                        break;
-                    }
-                }
+                Debug.LogError("[HUD] orbitCamera is null!");
             }
         }
     }
 
-    void PopulateModelDropdown()
-    {
-        if (modelDropdown == null || viewer == null) return;
+    // ============ MODEL SELECTOR (REMOVIDO - agora usa comparePanel) ============
 
+    // ======== COMPARE PANEL (CHIP SYSTEM) ========
+
+    void ShowComparePanel()
+    {
+        if (!comparePanel || viewer == null) 
+        {
+            Debug.LogError($"[HUD] ShowComparePanel failed: comparePanel={comparePanel != null}, viewer={viewer != null}");
+            return;
+        }
+
+        // popula modelos
         var models = viewer.GetAllAvailableModels();
-        modelDropdown.ClearOptions();
         
-        if (models.Count == 0)
+        dropdownModel.ClearOptions();
+        dropdownModel.AddOptions(models.Count > 0 ? models : new System.Collections.Generic.List<string> { "(sem modelos)" });
+        dropdownModel.interactable = models.Count > 0;
+        
+        // Garantir que o primeiro modelo válido seja selecionado
+        if (models.Count > 0)
         {
-            modelDropdown.AddOptions(new System.Collections.Generic.List<string> { "(sem modelos)" });
-            modelDropdown.interactable = false;
+            dropdownModel.value = 0;
+            dropdownModel.RefreshShownValue();
         }
-        else
-        {
-            modelDropdown.AddOptions(models);
-            modelDropdown.interactable = true;
-            UpdateVariantDropdown();
-        }
+        
+        dropdownModel.onValueChanged.RemoveAllListeners();
+        dropdownModel.onValueChanged.AddListener(_ => BuildVariantChips());
+
+        BuildVariantChips();
+        comparePanel.SetActive(true);
+        UIInputLock.Lock(this); // trava câmera com painel aberto
     }
 
-    void UpdateVariantDropdown()
+    public void HideComparePanel()
     {
-        if (variantDropdown == null || modelDropdown == null || viewer == null) return;
+        if (comparePanel) comparePanel.SetActive(false);
+        UIInputLock.Unlock(this);
+    }
 
-        string selectedModel = modelDropdown.options[modelDropdown.value].text;
-        if (string.IsNullOrEmpty(selectedModel) || selectedModel == "(sem modelos)")
+    void BuildVariantChips()
+    {
+        _selectedVariants.Clear();
+        foreach (Transform c in variantChipContainer) Destroy(c.gameObject);
+
+        if (variantChipContainer == null)
         {
-            variantDropdown.ClearOptions();
-            variantDropdown.AddOptions(new System.Collections.Generic.List<string> { "-" });
-            variantDropdown.interactable = false;
+            Debug.LogError("[HUD] variantChipContainer is null!");
             return;
         }
 
-        var variants = viewer.GetAvailableVariantsPublic(selectedModel);
-        variantDropdown.ClearOptions();
-        
-        if (variants.Count == 0)
+        if (variantChipPrefab == null)
         {
-            variantDropdown.AddOptions(new System.Collections.Generic.List<string> { "(sem variantes)" });
-            variantDropdown.interactable = false;
-        }
-        else
-        {
-            variantDropdown.AddOptions(variants);
-            variantDropdown.interactable = true;
-        }
-    }
-
-    async Task LoadSelectedModelAsync()
-    {
-        if (modelDropdown == null || variantDropdown == null || viewer == null) return;
-
-        string model = modelDropdown.options[modelDropdown.value].text;
-        string variant = variantDropdown.options[variantDropdown.value].text;
-
-        if (string.IsNullOrEmpty(model) || model == "(sem modelos)" ||
-            string.IsNullOrEmpty(variant) || variant == "(sem variantes)" || variant == "-")
-        {
-            SetLabel("Selecione um modelo e variante válidos.");
+            Debug.LogError("[HUD] variantChipPrefab is null!");
             return;
         }
 
-        SetLabel($"Carregando {model} ({variant})…");
-        bool ok = await viewer.LoadOnlyAsync(model, variant);
+        string model = dropdownModel.options.Count > 0 ? dropdownModel.options[dropdownModel.value].text : null;
+        Debug.Log($"[HUD] BuildVariantChips for model: '{model}' (dropdown value: {dropdownModel.value}, options count: {dropdownModel.options.Count})");
         
-        if (ok)
+        var variants = string.IsNullOrEmpty(model) || model == "(sem modelos)" ?
+                       new System.Collections.Generic.List<string>() : viewer.GetAvailableVariantsPublic(model);
+
+        Debug.Log($"[HUD] Found {variants.Count} variants for model '{model}': [{string.Join(", ", variants)}]");
+
+        foreach (var v in variants)
         {
-            _currentLoadedModel = model;
-            _currentLoadedVariant = variant;
-            UpdateCurrentModelLabel();
+            // Filtrar apenas variantes válidas
+            if (string.IsNullOrEmpty(v) || v.Contains("/") || v.Contains("\\"))
+            {
+                Debug.Log($"[HUD] Skipping invalid variant: '{v}'");
+                continue;
+            }
+
+            var chip = Instantiate(variantChipPrefab, variantChipContainer);
+            chip.gameObject.SetActive(true);
+            var label = chip.GetComponentInChildren<TMPro.TMP_Text>();
+            if (label) label.SetText(v);
+            chip.isOn = false;
+            chip.onValueChanged.AddListener(on => OnVariantChipChanged(v, on));
+            Debug.Log($"[HUD] Created chip for variant: '{v}'");
+        }
+        
+        Debug.Log($"[HUD] BuildVariantChips completed. Total chips created: {variants.Count}");
+    }
+
+    void OnVariantChipChanged(string variant, bool on)
+    {
+        Debug.Log($"[HUD] OnVariantChipChanged: variant='{variant}', on={on}, current selected count={_selectedVariants.Count}");
+        
+        if (on)
+        {
+            if (_selectedVariants.Count >= 2)
+            {
+                // estourou limite → desliga imediatamente o recém-clicado
+                var t = FindToggleByVariant(variant);
+                if (t) t.isOn = false;
+                SetLabel("Máx. 2 variantes.");
+                Debug.Log($"[HUD] Rejected variant '{variant}' - already 2 selected");
+                return;
+            }
+            if (!_selectedVariants.Contains(variant)) 
+            {
+                _selectedVariants.Add(variant);
+                Debug.Log($"[HUD] Added variant '{variant}' to selection. Total selected: {_selectedVariants.Count}");
+            }
+        }
+        else
+        {
+            _selectedVariants.Remove(variant);
+            Debug.Log($"[HUD] Removed variant '{variant}' from selection. Total selected: {_selectedVariants.Count}");
+        }
+        
+        Debug.Log($"[HUD] Current selected variants: [{string.Join(", ", _selectedVariants)}]");
+    }
+
+    Toggle FindToggleByVariant(string v)
+    {
+        foreach (Transform c in variantChipContainer)
+        {
+            var txt = c.GetComponentInChildren<TMPro.TMP_Text>();
+            if (txt && txt.text == v) return c.GetComponent<Toggle>();
+        }
+        return null;
+    }
+
+    async Task OnCompareConfirmAsync()
+    {
+        Debug.Log("[HUD] OnCompareConfirmAsync started");
+        
+        // Verificar se já há um carregamento em andamento
+        if (_isLoading)
+        {
+            Debug.LogWarning("[HUD] Carregamento já em andamento! Ignorando nova solicitação.");
+            SetLabel("Carregamento em andamento...");
+            return;
+        }
+        
+        _isLoading = true;
+        Debug.Log("[HUD] Carregamento iniciado - bloqueando novos carregamentos");
+        
+        // Desabilitar botão durante carregamento
+        if (buttonCompareLoad) buttonCompareLoad.interactable = false;
+        
+        try
+        {
+            if (viewer == null) 
+            {
+                Debug.LogError("[HUD] viewer is null!");
+                return;
+            }
+
+        string model = dropdownModel.options.Count > 0 ? dropdownModel.options[dropdownModel.value].text : null;
+        Debug.Log($"[HUD] Selected model: '{model}' (dropdown value: {dropdownModel.value})");
+        
+        if (string.IsNullOrEmpty(model) || model == "(sem modelos)") 
+        { 
+            SetLabel("Sem modelos."); 
+            Debug.LogError($"[HUD] No valid model selected: '{model}'");
+            return; 
+        }
+
+        Debug.Log($"[HUD] Selected variants count: {_selectedVariants.Count} - [{string.Join(", ", _selectedVariants)}]");
+        
+        if (_selectedVariants.Count == 0) 
+        { 
+            SetLabel("Selecione 1 ou 2 variantes."); 
+            Debug.LogWarning("[HUD] No variants selected");
+            return; 
+        }
+
+        if (_selectedVariants.Count == 1)
+        {
+            // modo 1×
+            var v = _selectedVariants[0];
+            SetLabel($"Carregando {model} ({v})…");
+            bool ok = await viewer.LoadOnlyAsync(model, v);
+            if (ok)
+            {
+                splitView?.SetCompareActive(false);   // <- mostra a View Camera
+                splitView?.ForceCleanupCameras(); // <- limpa estados para evitar travamentos
+                splitView?.ClearLabels();
+                NotifyModelLoaded(model, v);
+                SetLabel($"Atual: {model} ({v})");
+            }
+            else
+            {
+                SetLabel("Falha ao carregar.");
+            }
             
-            // Sincroniza o ModelViewer com a seleção atual
-            viewer.SetSelectedModel(model);
-            viewer.SetSelectedVariant(variant);
+            HideComparePanel(); // Fecha painel apenas no modo 1x
         }
         else
         {
-            SetLabel("Falha ao carregar.");
+            // modo 2× (split)
+            Debug.Log("[HUD] Entering 2x split mode");
+            
+            if (compareLoader == null) 
+            { 
+                SetLabel("CompareLoader não ligado."); 
+                Debug.LogError("[HUD] compareLoader is null!");
+                HideComparePanel();
+                return; 
+            }
+            if (splitView == null)
+            {
+                SetLabel("SplitView não ligado.");
+                Debug.LogError("[HUD] splitView is null!");
+                HideComparePanel();
+                return;
+            }
+
+            var a = _selectedVariants[0];
+            var b = _selectedVariants[1];
+            Debug.Log($"[HUD] Setting up comparison: {model} ({a}) × ({b})");
+
+            compareLoader.modelA = model; compareLoader.variantA = a;
+            compareLoader.modelB = model; compareLoader.variantB = b;
+            
+            Debug.Log("[HUD] Activating split view and loading both models");
+            splitView.SetCompareActive(true);    // <- ativa overlay + RTs
+            
+            // Fechar painel UI mas manter câmera travada durante carregamento
+            if (comparePanel) comparePanel.SetActive(false);
+            
+            // Aguardar carregamento antes de destravar câmera
+            await compareLoader.LoadBothAsync();
+            
+            SetLabel($"Preview: {model} ({a}) × ({b})");
+            Debug.Log($"[HUD] Split mode setup completed successfully");
+            
+            // Agora destravar a câmera após carregamento
+            UIInputLock.Unlock(this);
         }
-        
-        HideModelSelector();
+        }
+        finally
+        {
+            _isLoading = false;
+            Debug.Log("[HUD] Carregamento finalizado - liberando bloqueio");
+            
+            // Reabilitar botão após carregamento
+            if (buttonCompareLoad) buttonCompareLoad.interactable = true;
+        }
     }
 }

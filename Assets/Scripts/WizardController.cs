@@ -397,9 +397,9 @@ public class WizardController : MonoBehaviour
     public void Show()   
     { 
         // Fecha o preview se estiver aberto
-        if (hudController != null && hudController.modelSelectorPanel != null && hudController.modelSelectorPanel.activeSelf)
+        if (hudController != null && hudController.comparePanel != null && hudController.comparePanel.activeSelf)
         {
-            hudController.HideModelSelector();
+            hudController.HideComparePanel();
         }
         UIInputLock.Lock(this);
         _ = Fade(true);  

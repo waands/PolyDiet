@@ -70,20 +70,33 @@ public class SimpleOrbitCamera : MonoBehaviour
         // Rotação (mouse esq), Pan (mouse dir), Zoom (scroll) — só quando NÃO bloqueado
         if (!blocked)
         {
-            // Rotação
+            // Rotação orbital melhorada
             if (Input.GetMouseButton(0))
             {
-                _yaw += Input.GetAxis("Mouse X") * rotateSpeed * Time.deltaTime;
-                _pitch -= Input.GetAxis("Mouse Y") * rotateSpeed * Time.deltaTime;
+                float mouseX = Input.GetAxis("Mouse X");
+                float mouseY = Input.GetAxis("Mouse Y");
+                
+                // Rotação horizontal (yaw) - gira ao redor do objeto
+                _yaw += mouseX * rotateSpeed * Time.deltaTime;
+                
+                // Rotação vertical (pitch) - move para cima/baixo
+                _pitch -= mouseY * rotateSpeed * Time.deltaTime;
                 _pitch = Mathf.Clamp(_pitch, pitchClamp.x, pitchClamp.y);
+                
+                // Log para debug (remova se não precisar)
+                // Debug.Log($"Orbit: Yaw={_yaw:F1}°, Pitch={_pitch:F1}°, Distance={distance:F1}");
             }
 
-            // Pan
+            // Pan melhorado - move o centro de órbita
             if (enablePanning && Input.GetMouseButton(1))
             {
-                Vector3 right = transform.right;
-                Vector3 up = transform.up;
+                // Usa a orientação atual da câmera para determinar direções
+                Vector3 currentPos = CalculateSphericalPosition(pivot, _yaw, _pitch, distance);
+                Vector3 panLookDirection = (pivot - currentPos).normalized;
+                Vector3 right = Vector3.Cross(panLookDirection, Vector3.up).normalized;
+                Vector3 up = Vector3.Cross(right, panLookDirection).normalized;
                 
+                // Pan relativo à vista atual
                 Vector3 panDelta = (-Input.GetAxis("Mouse X") * right - Input.GetAxis("Mouse Y") * up) * panSpeed * Time.deltaTime;
                 _panOffset += panDelta;
             }
@@ -97,9 +110,29 @@ public class SimpleOrbitCamera : MonoBehaviour
         }
 
         // Sempre aplica a pose atual (mesmo bloqueado)
-        Quaternion rot = Quaternion.Euler(_pitch, _yaw, 0f);
-        Vector3 pos = pivot - rot * Vector3.forward * distance;
-        transform.SetPositionAndRotation(pos, rot);
+        // Implementação melhorada de órbita esférica
+        Vector3 sphericalPos = CalculateSphericalPosition(pivot, _yaw, _pitch, distance);
+        
+        // A câmera sempre olha para o pivot (centro do objeto)
+        Vector3 lookDirection = (pivot - sphericalPos).normalized;
+        Quaternion lookRotation = Quaternion.LookRotation(lookDirection);
+        
+        transform.SetPositionAndRotation(sphericalPos, lookRotation);
+    }
+    
+    // Calcula posição esférica ao redor do pivot
+    Vector3 CalculateSphericalPosition(Vector3 center, float yaw, float pitch, float radius)
+    {
+        // Converte ângulos para radianos
+        float yawRad = yaw * Mathf.Deg2Rad;
+        float pitchRad = pitch * Mathf.Deg2Rad;
+        
+        // Coordenadas esféricas para cartesianas
+        float x = radius * Mathf.Cos(pitchRad) * Mathf.Sin(yawRad);
+        float y = radius * Mathf.Sin(pitchRad);
+        float z = radius * Mathf.Cos(pitchRad) * Mathf.Cos(yawRad);
+        
+        return center + new Vector3(x, y, z);
     }
 
     // Posicionamento automático baseado no modelo carregado

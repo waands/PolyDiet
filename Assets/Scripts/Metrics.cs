@@ -45,6 +45,9 @@ public class Metrics : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+
+        // garante que está na raiz antes de DontDestroyOnLoad
+        if (transform.parent != null) transform.SetParent(null);
         DontDestroyOnLoad(gameObject);
     }
 
