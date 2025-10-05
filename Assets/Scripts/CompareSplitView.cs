@@ -64,6 +64,9 @@ public class CompareSplitView : MonoBehaviour
         {
             splitSlider.value = 0.5f; // valor central por padrão
             Debug.Log($"[CompareSplitView] Slider inicializado com valor: {splitSlider.value}");
+            
+            // Verifica configuração do RectTransform do slider
+            VerifySliderConfiguration();
         }
         
         UpdateSplitUI(); // posiciona a linha e o corte inicial
@@ -153,6 +156,47 @@ public class CompareSplitView : MonoBehaviour
         if (!f) f = cam.gameObject.AddComponent<CameraPoseFollower>();
         f.source   = driver.transform;
         f.sourceCam= driver;
+    }
+
+    void VerifySliderConfiguration()
+    {
+        if (!splitSlider) return;
+        
+        var rt = splitSlider.GetComponent<RectTransform>();
+        if (rt)
+        {
+            Debug.Log($"[CompareSplitView] Slider RectTransform:");
+            Debug.Log($"  - AnchorMin: {rt.anchorMin}");
+            Debug.Log($"  - AnchorMax: {rt.anchorMax}");
+            Debug.Log($"  - OffsetMin: {rt.offsetMin}");
+            Debug.Log($"  - OffsetMax: {rt.offsetMax}");
+            Debug.Log($"  - Rect: {rt.rect}");
+            
+            // Verifica se está em stretch (cobrindo tela toda)
+            bool isStretchedHorizontally = Mathf.Approximately(rt.anchorMin.x, 0f) && Mathf.Approximately(rt.anchorMax.x, 1f);
+            bool isStretchedVertically = Mathf.Approximately(rt.anchorMin.y, 0f) && Mathf.Approximately(rt.anchorMax.y, 1f);
+            
+            if (isStretchedHorizontally && isStretchedVertically)
+            {
+                Debug.LogWarning("[CompareSplitView] ⚠️ PROBLEMA: Slider está configurado para ocupar a tela toda!");
+                Debug.LogWarning("[CompareSplitView] Solução: No Inspector, ajuste o RectTransform do Slider:");
+                Debug.LogWarning("[CompareSplitView]   1. Selecione o GameObject do Slider na Hierarchy");
+                Debug.LogWarning("[CompareSplitView]   2. No Inspector, configure Anchors para a posição/tamanho desejado");
+                Debug.LogWarning("[CompareSplitView]   3. Exemplo: Bottom-Center com Width=200, Height=30");
+                Debug.LogWarning("[CompareSplitView]   Ou use Anchors específicos (não stretch em ambos os eixos)");
+            }
+            else
+            {
+                Debug.Log("[CompareSplitView] ✓ Slider configurado corretamente (não está em full stretch)");
+            }
+            
+            // Verifica raycast target
+            var graphic = splitSlider.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic && !graphic.raycastTarget)
+            {
+                Debug.LogWarning("[CompareSplitView] ⚠️ Slider tem raycastTarget=false, pode não responder a cliques!");
+            }
+        }
     }
 
     void SetupDragLock()
