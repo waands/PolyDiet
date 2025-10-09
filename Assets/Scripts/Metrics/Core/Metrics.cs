@@ -37,6 +37,9 @@ public class Metrics : MonoBehaviour
     float _memMB;
     double _fileMB;
     bool _lastLoadOk;
+    
+    // Run ID para agrupar execuções da mesma sessão
+    string _runId;
 
     readonly Stopwatch _sw = new();
     readonly List<float> _frameDt = new(4096);
@@ -45,6 +48,9 @@ public class Metrics : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+
+        // Gera run_id único para esta sessão
+        _runId = DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss");
 
         // garante que está na raiz antes de DontDestroyOnLoad
         if (transform.parent != null) transform.SetParent(null);
@@ -138,9 +144,10 @@ public class Metrics : MonoBehaviour
         string unityVer = Application.unityVersion;
         string scene    = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 
-        string header = "timestamp,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,ok";
+        string header = "timestamp,run_id,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,fps_window_s,ok";
         string newline = string.Join(",",
             ts,
+            Safe(_runId),
             Safe(platform),
             Safe(unityVer),
             Safe(scene),
@@ -151,6 +158,7 @@ public class Metrics : MonoBehaviour
             _memMB.ToString("0.###", CultureInfo.InvariantCulture),
             _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
             _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
+            fpsWindowSeconds.ToString("0.##", CultureInfo.InvariantCulture),
             _lastLoadOk ? "true" : "false"
         );
 

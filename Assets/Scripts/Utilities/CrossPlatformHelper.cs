@@ -69,16 +69,6 @@ public static class CrossPlatformHelper
     }
 
     /// <summary>
-    /// Retorna informações sobre a plataforma atual
-    /// </summary>
-    public static string GetPlatformInfo()
-    {
-        return $"Platform: {Application.platform}, " +
-               $"OS: {System.Environment.OSVersion}, " +
-               $"Architecture: {System.Environment.Is64BitOperatingSystem}";
-    }
-
-    /// <summary>
     /// Cria um diretório se ele não existir, com tratamento de erros
     /// </summary>
     public static bool EnsureDirectoryExists(string directoryPath)
@@ -105,13 +95,5 @@ public static class CrossPlatformHelper
     public static string ToUnixPath(string path)
     {
         return path?.Replace('\\', '/');
-    }
-
-    /// <summary>
-    /// Converte um path para usar barras Windows
-    /// </summary>
-    public static string ToWindowsPath(string path)
-    {
-        return path?.Replace('/', '\\');
     }
 }

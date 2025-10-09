@@ -102,12 +102,6 @@ public class CompareLoader : MonoBehaviour
         _a = _b = null;
     }
 
-    // Wrapper público para ser chamado por botões na UI
-    public void LoadBoth()
-    {
-        _ = LoadBothAsync();
-    }
-
     // Helper para debug: verifica configuração das câmeras
     public void DebugCameraLayers()
     {

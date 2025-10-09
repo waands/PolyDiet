@@ -60,40 +60,6 @@ public class HUDController : MonoBehaviour
         UpdateCurrentModelLabel();
     }
 
-    async Task QuickLoadAsync()
-    {
-        if (viewer == null) { Debug.LogWarning("HUD: viewer não setado."); return; }
-
-        // Pega o modelo selecionado (ou o primeiro)
-        string model = viewer.GetSelectedModelNamePublic();
-
-        if (string.IsNullOrEmpty(model)) { SetLabel("Nenhum modelo."); return; }
-
-        var variants = viewer.GetAvailableVariantsPublic(model);
-        if (variants == null || variants.Count == 0) { SetLabel("Sem variantes."); return; }
-
-        // Preferência: meshopt > draco > original (ajuste se quiser)
-        string variant = variants.Contains("meshopt") ? "meshopt" :
-                         variants.Contains("draco")   ? "draco"   :
-                         variants[0];
-
-        SetLabel($"Carregando {model} ({variant})…");
-        bool ok = await viewer.LoadAsync(model, variant);
-        
-        if (ok)
-        {
-            splitView?.SetCompareActive(false); // <- mostra a View Camera
-            splitView?.ForceCleanupCameras(); // <- limpa estados para evitar travamentos
-            _currentLoadedModel = model;
-            _currentLoadedVariant = variant;
-            UpdateCurrentModelLabel();
-        }
-        else
-        {
-            SetLabel("Falha ao carregar.");
-        }
-    }
-
     void SetLabel(string s) { if (quickLoadLabel) quickLoadLabel.SetText(s); }
 
     void UpdateCurrentModelLabel()

@@ -19,9 +19,4 @@ public static class UIInputLock
         if (owner == null) owner = typeof(UIInputLock);
         _owners.Remove(owner);
     }
-
-    public static void ForceUnlockAll()
-    {
-        _owners.Clear();
-    }
 }
