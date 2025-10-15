@@ -15,7 +15,7 @@ public static class MetricsConfig
     public const int DEFAULT_NUMBER_OF_TESTS = 3;
     
     // Configurações de arquivos
-    public const string CSV_FILENAME = "metrics.csv";
+    public const string CSV_FILENAME = "benchmarks.csv";
     public const string LEGACY_CSV_FILENAME = "benchmarks.csv";
     
     // Configurações de formato CSV
