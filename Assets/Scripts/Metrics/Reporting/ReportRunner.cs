@@ -180,7 +180,7 @@ public class ReportRunner : MonoBehaviour
         if (useAdvancedScript)
         {
             // Usa script avançado por padrão
-            string advancedScriptPath = Path.Combine(UApp.dataPath, "Scripts", "Metrics", "reports_tool", "advanced_metrics_report.py");
+            string advancedScriptPath = Path.Combine(Application.dataPath, "Scripts", "Metrics", "reports_tool", "advanced_metrics_report.py");
             if (File.Exists(advancedScriptPath))
             {
                 actualScriptPath = advancedScriptPath;
@@ -220,7 +220,7 @@ public class ReportRunner : MonoBehaviour
         }
 
         Log($"[Report] Executando comando único:\n{file} {finalArgs}");
-        StartProcess(file, finalArgs, outDir);
+        StartProcess(file, finalArgs, outDir, actualScriptPath);
     }
 
     string AutoPython()
@@ -234,7 +234,7 @@ public class ReportRunner : MonoBehaviour
 #endif
     }
 
-    void StartProcess(string file, string args, string outDir)
+    void StartProcess(string file, string args, string outDir, string scriptPath)
     {
         try
         {
@@ -244,7 +244,7 @@ public class ReportRunner : MonoBehaviour
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(actualScriptPath) ?? System.Environment.CurrentDirectory,
+                WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? System.Environment.CurrentDirectory,
             };
             // força UTF-8
             psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
