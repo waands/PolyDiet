@@ -63,14 +63,22 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_modelViewer == null)
             {
-                LogWarning("HandleModelsListUpdated", "ModelViewer reference is null");
+                LogError("HandleModelsListUpdated", "ModelViewer reference is null - cannot process models list update");
                 return;
             }
             
-            LogDebug("HandleModelsListUpdated", $"Models list updated: {modelNames.Length} models");
+            LogDebug("HandleModelsListUpdated", $"Processing models list update: {modelNames.Length} models");
             
-            // Aqui podemos adicionar lógica específica quando a lista de modelos é atualizada
-            // Por exemplo, atualizar UI, validar seleções, etc.
+            try
+            {
+                // Aqui podemos adicionar lógica específica quando a lista de modelos é atualizada
+                // Por exemplo, atualizar UI, validar seleções, etc.
+                LogDebug("HandleModelsListUpdated", $"Models list updated successfully: {string.Join(", ", modelNames)}");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleModelsListUpdated", $"Failed to process models list update: {e.Message}");
+            }
         }
         
         /// <summary>
@@ -80,14 +88,22 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_modelViewer == null)
             {
-                LogWarning("HandleModelLoadError", "ModelViewer reference is null");
+                LogError("HandleModelLoadError", "ModelViewer reference is null - cannot process model load error");
                 return;
             }
             
-            LogDebug("HandleModelLoadError", $"Model load error: {modelName} ({variant}) - {errorMessage}");
+            LogDebug("HandleModelLoadError", $"Processing model load error: {modelName} ({variant}) - {errorMessage}");
             
-            // Aqui podemos adicionar lógica específica para lidar com erros de carregamento
-            // Por exemplo, mostrar mensagem de erro na UI, tentar carregar variante alternativa, etc.
+            try
+            {
+                // Aqui podemos adicionar lógica específica para lidar com erros de carregamento
+                // Por exemplo, mostrar mensagem de erro na UI, tentar carregar variante alternativa, etc.
+                LogDebug("HandleModelLoadError", $"Model load error processed successfully");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleModelLoadError", $"Failed to process model load error: {e.Message}");
+            }
         }
         
         /// <summary>
@@ -97,14 +113,23 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_modelViewer == null)
             {
-                LogWarning("HandleLongOperationChanged", "ModelViewer reference is null");
+                LogError("HandleLongOperationChanged", "ModelViewer reference is null - cannot process long operation change");
                 return;
             }
             
-            LogDebug("HandleLongOperationChanged", $"Operation {(isStarted ? "started" : "completed")}: {operation}");
+            string status = isStarted ? "started" : "completed";
+            LogDebug("HandleLongOperationChanged", $"Processing long operation {status}: {operation}");
             
-            // Aqui podemos adicionar lógica específica para operações longas
-            // Por exemplo, mostrar indicador de progresso, desabilitar UI, etc.
+            try
+            {
+                // Aqui podemos adicionar lógica específica para operações longas
+                // Por exemplo, mostrar indicador de progresso, desabilitar UI, etc.
+                LogDebug("HandleLongOperationChanged", $"Long operation {status} processed successfully: {operation}");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleLongOperationChanged", $"Failed to process long operation change: {e.Message}");
+            }
         }
         
         /// <summary>
