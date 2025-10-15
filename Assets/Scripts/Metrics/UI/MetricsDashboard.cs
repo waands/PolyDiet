@@ -80,13 +80,12 @@ public class MetricsDashboard : MonoBehaviour
     {
         Debug.Log("[Dashboard] Atualizando dashboard...");
         
-        // Carrega dados do CSV
-        var csvPath = Metrics.Instance != null ? Metrics.Instance.GetCsvPathPublic() : "";
-        var entries = MetricsStore.Load(csvPath);
+        // Carrega dados de todos os modelos
+        var entries = MetricsStore.LoadAllModels();
         
         if (entries.Count == 0)
         {
-            Debug.LogWarning("[Dashboard] Nenhuma métrica encontrada no CSV");
+            Debug.LogWarning("[Dashboard] Nenhuma métrica encontrada nos CSVs");
             return;
         }
         
@@ -113,16 +112,29 @@ public class MetricsDashboard : MonoBehaviour
     /// </summary>
     private void PopulateModelDropdown()
     {
-        if (dropdownModel == null) return;
+        if (dropdownModel == null) 
+        {
+            Debug.LogWarning("[Dashboard] dropdownModel é null!");
+            return;
+        }
+        
+        Debug.Log($"[Dashboard] Populando dropdown com {_allStats?.Count ?? 0} modelos");
         
         dropdownModel.ClearOptions();
-        var modelNames = _allStats.Select(s => s.model).ToList();
+        var modelNames = _allStats?.Select(s => s.model).ToList() ?? new List<string>();
+        Debug.Log($"[Dashboard] Nomes dos modelos: {string.Join(", ", modelNames)}");
+        
         dropdownModel.AddOptions(modelNames);
         
         if (modelNames.Count > 0)
         {
             dropdownModel.value = 0;
             dropdownModel.RefreshShownValue();
+            Debug.Log($"[Dashboard] Dropdown populado com {modelNames.Count} opções");
+        }
+        else
+        {
+            Debug.LogWarning("[Dashboard] Nenhum modelo para popular no dropdown!");
         }
     }
     

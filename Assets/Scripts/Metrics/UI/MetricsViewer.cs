@@ -9,6 +9,7 @@ public class MetricsViewer : MonoBehaviour
 {
     [Header("Refs")]
     public Metrics metrics;                      // arraste o GO Metrics
+    public ReportRunner reportRunner;            // arraste o GO ReportRunner
 
     [Header("UI")]
     public GameObject panel;                     // painel inteiro (pode esconder/mostrar)
@@ -81,7 +82,7 @@ public class MetricsViewer : MonoBehaviour
 
     public void Refresh()
     {
-        _all = MetricsStore.Load(GetCsvPath());
+        _all = MetricsStore.LoadAllModels();
         PopulateFilters();
         ApplyFilters();
     }
@@ -276,5 +277,38 @@ public class MetricsViewer : MonoBehaviour
         UIInputLock.Unlock(this);
         if (panel != null)
             panel.SetActive(false);
+    }
+
+    /// <summary>
+    /// Pega o modelo selecionado no dropdown e solicita
+    /// ao ReportRunner que gere um relatório para ele.
+    /// </summary>
+    public void TriggerReportGeneration()
+    {
+        if (reportRunner == null)
+        {
+            Debug.LogError("Referência do ReportRunner não está configurada no MetricsViewer!", this.gameObject);
+            return;
+        }
+
+        if (dropdownModel == null || dropdownModel.options.Count == 0)
+        {
+            Debug.LogWarning("Dropdown de modelos não está disponível ou está vazio.", this.gameObject);
+            return;
+        }
+
+        // Pega o nome do modelo selecionado no dropdown
+        string selectedModel = dropdownModel.options[dropdownModel.value].text;
+
+        if (string.IsNullOrEmpty(selectedModel) || selectedModel.Contains("(sem dados)"))
+        {
+            Debug.LogWarning("Modelo selecionado é inválido. Não é possível gerar relatório.", this.gameObject);
+            return;
+        }
+
+        Debug.Log($"[MetricsViewer] Gerando relatório para modelo selecionado: {selectedModel}");
+        
+        // Chama o método no ReportRunner, passando o modelo selecionado
+        reportRunner.RunReportForModel(selectedModel);
     }
 }

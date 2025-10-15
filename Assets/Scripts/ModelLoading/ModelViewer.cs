@@ -302,7 +302,7 @@ public class ModelViewer : MonoBehaviour
             // Iniciar medição de métricas
             if (Metrics.Instance != null)
             {
-                Metrics.Instance.BeginLoad(modelName, variant, path);
+                Metrics.Instance.BeginLoad(modelName, variant, path, 1); // Teste único para carregamento manual
             }
 
             _currentContainer = new GameObject($"GLTF_{modelName}_{variant}");
@@ -731,12 +731,8 @@ public class ModelViewer : MonoBehaviour
 
     private string GetCsvPath()
     {
-        if (Metrics.Instance.saveInsideProject)
-        {
-            var projectRoot = Directory.GetParent(UApp.dataPath)!.FullName;
-            return Path.Combine(projectRoot, Metrics.Instance.projectSubDir, Metrics.Instance.csvFileName);
-        }
-        return Path.Combine(UApp.persistentDataPath, "Benchmarks", Metrics.Instance.csvFileName);
+        // Usar o novo método da classe Metrics
+        return Metrics.Instance.GetCsvPathPublic();
     }
 
     private string[] ParseCsvLine(string line)
@@ -1010,6 +1006,7 @@ public class ModelViewer : MonoBehaviour
             // URL correta para Unity
             string url = "file://" + path.Replace("\\", "/");
             UDebug.Log($"[LoadOnlyAsync] URL: {url}");
+            UDebug.Log($"[LoadOnlyAsync] 🎯 TENTANDO CARREGAR ARQUIVO: {path}");
 
             bool ok = false;
             try 

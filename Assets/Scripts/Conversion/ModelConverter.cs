@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -184,27 +185,67 @@ public static class ModelConverter
 
     /// <summary>
     /// Converte OBJ diretamente para GLB usando obj2gltf
+    /// Versão melhorada com validações robustas e melhor tratamento de erros
     /// </summary>
     static async Task<bool> ConvertObjToGlbWithObj2Gltf(string objPath, string glbPath)
     {
         try
         {
-            // Verifica se obj2gltf está disponível
+            Debug.Log($"[ModelConverter] 🔄 Iniciando conversão OBJ → GLB");
+            Debug.Log($"[ModelConverter] Origem: {objPath}");
+            Debug.Log($"[ModelConverter] Destino: {glbPath}");
+
+            // 1. Verifica se obj2gltf está disponível
             string obj2gltf = DetectObj2GltfPath();
             if (string.IsNullOrEmpty(obj2gltf))
             {
-                Debug.LogError("[ModelConverter] obj2gltf não encontrado. Instale com: npm install -g obj2gltf");
+                Debug.LogError("[ModelConverter] ❌ obj2gltf não encontrado. Instale com: npm install -g obj2gltf");
                 return false;
             }
-            
-            Debug.Log($"[ModelConverter] Usando obj2gltf: {obj2gltf}");
-            Debug.Log($"[ModelConverter] Convertendo: {objPath} → {glbPath}");
+            Debug.Log($"[ModelConverter] ✅ obj2gltf encontrado: {obj2gltf}");
 
-            // obj2gltf pode converter diretamente para GLB usando --binary
+            // 2. Validação robusta do arquivo OBJ
+            var objValidation = ValidateObjFile(objPath);
+            if (!objValidation.IsValid)
+            {
+                Debug.LogError($"[ModelConverter] ❌ Arquivo OBJ inválido: {objValidation.ErrorMessage}");
+                return false;
+            }
+            Debug.Log($"[ModelConverter] ✅ Arquivo OBJ válido: {objValidation.VertexCount} vértices, {objValidation.FaceCount} faces");
+
+            // 3. Verifica dependências (arquivos .mtl, texturas)
+            var dependencies = CheckObjDependencies(objPath);
+            if (dependencies.MissingFiles.Count > 0)
+            {
+                Debug.LogWarning($"[ModelConverter] ⚠️ Arquivos dependentes não encontrados: {string.Join(", ", dependencies.MissingFiles)}");
+                Debug.LogWarning($"[ModelConverter] A conversão continuará, mas materiais/texturas podem não funcionar corretamente");
+            }
+            else
+            {
+                Debug.Log($"[ModelConverter] ✅ Todas as dependências encontradas");
+            }
+
+            // 4. Cria diretório de destino se necessário
+            string destDir = Path.GetDirectoryName(glbPath);
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+                Debug.Log($"[ModelConverter] 📁 Diretório criado: {destDir}");
+            }
+
+            // 5. Remove arquivo GLB existente se houver
+            if (File.Exists(glbPath))
+            {
+                File.Delete(glbPath);
+                Debug.Log($"[ModelConverter] 🗑️ Arquivo GLB existente removido");
+            }
+
+            // 6. Executa conversão
+            Debug.Log($"[ModelConverter] 🔧 Executando conversão...");
             var processInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = obj2gltf,
-                Arguments = $"--binary -i \"{objPath}\" -o \"{glbPath}\"",
+                Arguments = $"-i \"{objPath}\" -o \"{glbPath}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -216,22 +257,40 @@ public static class ModelConverter
             {
                 if (process != null)
                 {
-                    await Task.Run(() => process.WaitForExit(60000)); // timeout de 60s
+                    await Task.Run(() => process.WaitForExit(120000)); // timeout de 2 minutos
                     
                     string stdout = process.StandardOutput.ReadToEnd();
                     string stderr = process.StandardError.ReadToEnd();
                     
+                    // 7. Validação do resultado
                     bool success = process.ExitCode == 0 && File.Exists(glbPath);
                     
                     if (success)
                     {
-                        var fileInfo = new FileInfo(glbPath);
-                        Debug.Log($"[ModelConverter] ✅ obj2gltf conversão bem-sucedida!");
-                        Debug.Log($"[ModelConverter] Arquivo GLB criado: {glbPath} ({fileInfo.Length / 1024.0:F1} KB)");
+                        // Valida se o arquivo GLB resultante é válido
+                        var glbValidation = ValidateGlbFile(glbPath);
+                        if (glbValidation.IsValid)
+                        {
+                            var fileInfo = new FileInfo(glbPath);
+                            Debug.Log($"[ModelConverter] ✅ Conversão bem-sucedida!");
+                            Debug.Log($"[ModelConverter] 📊 Arquivo GLB: {fileInfo.Length / 1024.0:F1} KB");
+                            Debug.Log($"[ModelConverter] 📊 Compressão: {(1.0 - (double)fileInfo.Length / new FileInfo(objPath).Length) * 100:F1}%");
+                            
+                            // Log de warnings do obj2gltf se houver
+                            if (!string.IsNullOrEmpty(stderr) && !stderr.Contains("deprecated"))
+                            {
+                                Debug.LogWarning($"[ModelConverter] ⚠️ obj2gltf warnings: {stderr}");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"[ModelConverter] ❌ Arquivo GLB resultante é inválido: {glbValidation.ErrorMessage}");
+                            success = false;
+                        }
                     }
                     else
                     {
-                        Debug.LogError($"[ModelConverter] ❌ obj2gltf falhou (ExitCode: {process.ExitCode})");
+                        Debug.LogError($"[ModelConverter] ❌ Conversão falhou (ExitCode: {process.ExitCode})");
                         if (!string.IsNullOrEmpty(stderr))
                             Debug.LogError($"[ModelConverter] stderr: {stderr}");
                         if (!string.IsNullOrEmpty(stdout))
@@ -246,7 +305,8 @@ public static class ModelConverter
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[ModelConverter] ❌ obj2gltf erro: {ex.Message}");
+            Debug.LogError($"[ModelConverter] ❌ Erro na conversão OBJ→GLB: {ex.Message}");
+            Debug.LogError($"[ModelConverter] Stack trace: {ex.StackTrace}");
             return false;
         }
     }
@@ -313,6 +373,209 @@ public static class ModelConverter
         {
             Debug.LogError($"[ModelConverter] ❌ gltf-transform erro: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Valida se um arquivo OBJ é válido (versão simples - mantida para compatibilidade)
+    /// </summary>
+    static bool IsValidObjFile(string objPath)
+    {
+        try
+        {
+            if (!File.Exists(objPath)) return false;
+            
+            // Lê as primeiras linhas para verificar se é um arquivo OBJ válido
+            var lines = File.ReadLines(objPath).Take(10);
+            bool hasValidContent = false;
+            
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                // Verifica se contém elementos típicos de arquivo OBJ
+                if (trimmedLine.StartsWith("v ") || // vértices
+                    trimmedLine.StartsWith("vn ") || // normais
+                    trimmedLine.StartsWith("vt ") || // texturas
+                    trimmedLine.StartsWith("f ") || // faces
+                    trimmedLine.StartsWith("o ") || // objetos
+                    trimmedLine.StartsWith("g ") || // grupos
+                    trimmedLine.StartsWith("mtllib") || // material library
+                    trimmedLine.StartsWith("usemtl")) // material
+                {
+                    hasValidContent = true;
+                    break;
+                }
+            }
+            
+            return hasValidContent;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Validação robusta de arquivo OBJ com estatísticas detalhadas
+    /// </summary>
+    static ObjValidationResult ValidateObjFile(string objPath)
+    {
+        try
+        {
+            if (!File.Exists(objPath))
+            {
+                return new ObjValidationResult { IsValid = false, ErrorMessage = "Arquivo não encontrado" };
+            }
+
+            var lines = File.ReadAllLines(objPath);
+            int vertexCount = 0;
+            int faceCount = 0;
+            int normalCount = 0;
+            int textureCount = 0;
+            bool hasValidContent = false;
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith("#")) continue;
+
+                if (trimmedLine.StartsWith("v ")) vertexCount++;
+                else if (trimmedLine.StartsWith("vn ")) normalCount++;
+                else if (trimmedLine.StartsWith("vt ")) textureCount++;
+                else if (trimmedLine.StartsWith("f ")) faceCount++;
+                else if (trimmedLine.StartsWith("o ") || trimmedLine.StartsWith("g ") || 
+                         trimmedLine.StartsWith("mtllib") || trimmedLine.StartsWith("usemtl"))
+                {
+                    hasValidContent = true;
+                }
+            }
+
+            if (vertexCount == 0)
+            {
+                return new ObjValidationResult { IsValid = false, ErrorMessage = "Nenhum vértice encontrado" };
+            }
+
+            if (faceCount == 0)
+            {
+                return new ObjValidationResult { IsValid = false, ErrorMessage = "Nenhuma face encontrada" };
+            }
+
+            return new ObjValidationResult
+            {
+                IsValid = true,
+                VertexCount = vertexCount,
+                FaceCount = faceCount,
+                NormalCount = normalCount,
+                TextureCount = textureCount
+            };
+        }
+        catch (Exception ex)
+        {
+            return new ObjValidationResult { IsValid = false, ErrorMessage = $"Erro ao ler arquivo: {ex.Message}" };
+        }
+    }
+
+    /// <summary>
+    /// Verifica dependências de um arquivo OBJ (arquivos .mtl, texturas)
+    /// </summary>
+    static ObjDependenciesResult CheckObjDependencies(string objPath)
+    {
+        var result = ObjDependenciesResult.Create();
+        var objDir = Path.GetDirectoryName(objPath);
+        
+        try
+        {
+            var lines = File.ReadAllLines(objPath);
+            var referencedFiles = new HashSet<string>();
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (trimmedLine.StartsWith("mtllib "))
+                {
+                    var mtlFile = trimmedLine.Substring(7).Trim();
+                    referencedFiles.Add(Path.Combine(objDir, mtlFile));
+                }
+                else if (trimmedLine.StartsWith("map_") || trimmedLine.StartsWith("map "))
+                {
+                    var parts = trimmedLine.Split(' ');
+                    if (parts.Length > 1)
+                    {
+                        var textureFile = parts[1].Trim();
+                        referencedFiles.Add(Path.Combine(objDir, textureFile));
+                    }
+                }
+            }
+
+            foreach (var file in referencedFiles)
+            {
+                if (File.Exists(file))
+                {
+                    result.FoundFiles.Add(file);
+                }
+                else
+                {
+                    result.MissingFiles.Add(file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            result.MissingFiles.Add($"Erro ao verificar dependências: {ex.Message}");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Valida se um arquivo GLB é válido
+    /// </summary>
+    static GlbValidationResult ValidateGlbFile(string glbPath)
+    {
+        try
+        {
+            if (!File.Exists(glbPath))
+            {
+                return new GlbValidationResult { IsValid = false, ErrorMessage = "Arquivo não encontrado" };
+            }
+
+            var fileInfo = new FileInfo(glbPath);
+            if (fileInfo.Length < 12) // GLB mínimo tem pelo menos 12 bytes (header)
+            {
+                return new GlbValidationResult { IsValid = false, ErrorMessage = "Arquivo muito pequeno para ser um GLB válido" };
+            }
+
+            // Lê o header do GLB
+            using (var fs = new FileStream(glbPath, FileMode.Open, FileAccess.Read))
+            using (var reader = new BinaryReader(fs))
+            {
+                // Verifica magic number (glTF)
+                var magic = reader.ReadUInt32();
+                if (magic != 0x46546C67) // "glTF" em little-endian
+                {
+                    return new GlbValidationResult { IsValid = false, ErrorMessage = "Magic number inválido - não é um arquivo GLB" };
+                }
+
+                // Verifica versão
+                var version = reader.ReadUInt32();
+                if (version != 2)
+                {
+                    return new GlbValidationResult { IsValid = false, ErrorMessage = $"Versão GLB não suportada: {version}" };
+                }
+
+                // Verifica tamanho total
+                var totalLength = reader.ReadUInt32();
+                if (totalLength != fileInfo.Length)
+                {
+                    return new GlbValidationResult { IsValid = false, ErrorMessage = "Tamanho do arquivo não confere com o header" };
+                }
+            }
+
+            return new GlbValidationResult { IsValid = true, FileSize = fileInfo.Length };
+        }
+        catch (Exception ex)
+        {
+            return new GlbValidationResult { IsValid = false, ErrorMessage = $"Erro ao validar GLB: {ex.Message}" };
         }
     }
 
@@ -489,4 +752,45 @@ public struct ModelInfo
     public double SizeMB;
     public DateTime LastModified;
     public bool CanConvert;
+}
+
+/// <summary>
+/// Resultado da validação de arquivo OBJ
+/// </summary>
+public struct ObjValidationResult
+{
+    public bool IsValid;
+    public string ErrorMessage;
+    public int VertexCount;
+    public int FaceCount;
+    public int NormalCount;
+    public int TextureCount;
+}
+
+/// <summary>
+/// Resultado da verificação de dependências de arquivo OBJ
+/// </summary>
+public struct ObjDependenciesResult
+{
+    public List<string> FoundFiles;
+    public List<string> MissingFiles;
+
+    public static ObjDependenciesResult Create()
+    {
+        return new ObjDependenciesResult
+        {
+            FoundFiles = new List<string>(),
+            MissingFiles = new List<string>()
+        };
+    }
+}
+
+/// <summary>
+/// Resultado da validação de arquivo GLB
+/// </summary>
+public struct GlbValidationResult
+{
+    public bool IsValid;
+    public string ErrorMessage;
+    public long FileSize;
 }

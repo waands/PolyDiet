@@ -16,16 +16,15 @@ public class Metrics : MonoBehaviour
 
     [Header("Config")]
     [Tooltip("Duração (segundos) da janela para medir FPS após o carregamento.")]
-    public float fpsWindowSeconds = 5f;
+    public float fpsWindowSeconds = MetricsConfig.DEFAULT_FPS_WINDOW_SECONDS;
+    [Tooltip("Número de testes a executar por modelo/variante.")]
+    public int numberOfTests = MetricsConfig.DEFAULT_NUMBER_OF_TESTS;
 
     [Header("Output")]
-    public bool saveInsideProject = true;
-    public string projectSubDir   = "Benchmarks";
-    public bool upsertBySceneModelVariant = true; // <- NOVO
-
-
-    [Tooltip("Nome do arquivo CSV (será salvo em persistentDataPath/Benchmarks/).")]
-    public string csvFileName = "benchmarks.csv";
+    [Tooltip("Salvar dentro de StreamingAssets/Models/{modelo}/benchmark/")]
+    public bool saveInModelDirectory = true;
+    [Tooltip("Nome do arquivo CSV dentro da pasta benchmark do modelo.")]
+    public string csvFileName = MetricsConfig.CSV_FILENAME;
 
     // Estado corrente da medição
     string _modelName;
@@ -33,10 +32,14 @@ public class Metrics : MonoBehaviour
     string _filePath;
     double _loadMs;
     double _fpsAvg;
+    double _fpsMin;
+    double _fpsMax;
+    double _fpsMedian;
     double _fpsP01; // 1% low
     float _memMB;
     double _fileMB;
     bool _lastLoadOk;
+    int _testNumber;
     
     // Run ID para agrupar execuções da mesma sessão
     string _runId;
@@ -59,12 +62,14 @@ public class Metrics : MonoBehaviour
 
     public string GetOutputDir()
     {
-        if (saveInsideProject)
+        if (saveInModelDirectory && !string.IsNullOrEmpty(_modelName))
         {
-            var projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
-            return CrossPlatformHelper.CombinePaths(projectRoot, projectSubDir);
+            return MetricsPathProvider.GetBenchmarkDirectory(_modelName);
         }
-        return CrossPlatformHelper.CombinePaths(Application.persistentDataPath, "Benchmarks");
+        else
+        {
+            return CrossPlatformHelper.CombinePaths(Application.persistentDataPath, MetricsConfig.BENCHMARKS_DIR_NAME);
+        }
     }
 
     public string GetCsvPathPublic()
@@ -77,14 +82,18 @@ public class Metrics : MonoBehaviour
 
     // =============== API pública ===============
 
-    public void BeginLoad(string modelName, string variant, string filePath)
+    public void BeginLoad(string modelName, string variant, string filePath, int testNumber = 1)
     {
         _modelName = modelName ?? "";
         _variant   = variant   ?? "";
         _filePath  = filePath  ?? "";
+        _testNumber = testNumber;
 
         _loadMs = 0;
         _fpsAvg = 0;
+        _fpsMin = 0;
+        _fpsMax = 0;
+        _fpsMedian = 0;
         _fpsP01 = 0;
         _memMB  = 0;
         _fileMB = SafeFileMB(_filePath);
@@ -116,21 +125,12 @@ public class Metrics : MonoBehaviour
         {
             await Task.Yield();
             float dt = Time.unscaledDeltaTime;
-            if (dt > 0f && dt < 1f) _frameDt.Add(dt);
+            if (dt > MetricsConfig.MIN_FRAME_DELTA_TIME && dt < MetricsConfig.MAX_FRAME_DELTA_TIME) 
+                _frameDt.Add(dt);
             t += dt;
         }
 
-        if (_frameDt.Count > 0)
-        {
-            // FPS médio = frames / tempo; equivalente a média de (1/dt)
-            var fpsSamples = _frameDt.Select(dt => 1f / dt).ToArray();
-            _fpsAvg = fpsSamples.Average();
-
-            Array.Sort(fpsSamples);
-            int n = fpsSamples.Length;
-            int idx = Math.Max(0, (int)Math.Floor(n * 0.01) - 1); // 1% low ~ percentil 1
-            _fpsP01 = fpsSamples[Math.Clamp(idx, 0, n - 1)];
-        }
+        CalculateFpsStatistics();
     }
 
     public void WriteCsv()
@@ -144,10 +144,19 @@ public class Metrics : MonoBehaviour
         string unityVer = Application.unityVersion;
         string scene    = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 
-        string header = "timestamp,run_id,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_1pc_low,fps_window_s,ok";
+        // Criar string com amostras de FPS (limitado para não tornar o CSV muito grande)
+        string fpsSamplesStr = "";
+        if (_frameDt.Count > 0)
+        {
+            var fpsSamples = _frameDt.Select(dt => 1f / dt).Take(MetricsConfig.MAX_FPS_SAMPLES_IN_CSV).ToArray();
+            fpsSamplesStr = string.Join(";", fpsSamples.Select(f => f.ToString("0.##", CultureInfo.InvariantCulture)));
+        }
+
+        string header = "timestamp,run_id,test_number,platform,unity_version,scene,model,variant,file_mb,load_ms,mem_mb,fps_avg,fps_min,fps_max,fps_median,fps_1pc_low,fps_samples,fps_window_s,ok";
         string newline = string.Join(",",
             ts,
             Safe(_runId),
+            _testNumber.ToString(),
             Safe(platform),
             Safe(unityVer),
             Safe(scene),
@@ -157,66 +166,46 @@ public class Metrics : MonoBehaviour
             _loadMs.ToString("0.###", CultureInfo.InvariantCulture),
             _memMB.ToString("0.###", CultureInfo.InvariantCulture),
             _fpsAvg.ToString("0.##", CultureInfo.InvariantCulture),
+            _fpsMin.ToString("0.##", CultureInfo.InvariantCulture),
+            _fpsMax.ToString("0.##", CultureInfo.InvariantCulture),
+            _fpsMedian.ToString("0.##", CultureInfo.InvariantCulture),
             _fpsP01.ToString("0.##", CultureInfo.InvariantCulture),
+            Safe(fpsSamplesStr),
             fpsWindowSeconds.ToString("0.##", CultureInfo.InvariantCulture),
             _lastLoadOk ? "true" : "false"
         );
 
-        if (!upsertBySceneModelVariant)
-        {
-            bool writeHeader = !File.Exists(path);
-            using var sw = new StreamWriter(path, append: true);
-            if (writeHeader) sw.WriteLine(header);
-            sw.WriteLine(newline);
-            UnityEngine.Debug.Log($"[Metrics] CSV salvo: {path}");
-            return;
-        }
-
-        // === UPSERT: substitui linhas com mesmo (scene, model, variant) ===
-        var pattern = "," + Safe(scene) + "," + Safe(_modelName) + "," + Safe(_variant) + ",";
-        string[] lines = File.Exists(path) ? File.ReadAllLines(path) : Array.Empty<string>();
-
-        using (var sw = new StreamWriter(path, append: false))
-        {
-            if (lines.Length == 0 || (lines.Length > 0 && lines[0] != header))
-                sw.WriteLine(header);
-
-            bool replaced = false;
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (i == 0 && lines[i] == header) continue; // pula cabeçalho antigo, já escrevemos
-                var line = lines[i];
-                if (!replaced && line.Contains(pattern, StringComparison.Ordinal))
-                {
-                    sw.WriteLine(newline);
-                    replaced = true;
-                }
-                else
-                {
-                    sw.WriteLine(line);
-                }
-            }
-            if (!replaced) sw.WriteLine(newline);
-        }
+        // Modo append: sempre adicionar nova linha
+        bool writeHeader = !File.Exists(path);
+        using var sw = new StreamWriter(path, append: true, System.Text.Encoding.UTF8);
+        if (writeHeader) sw.WriteLine(header);
+        sw.WriteLine(newline);
         UnityEngine.Debug.Log($"[Metrics] CSV salvo: {path}");
     }
 
     // =============== Utils ===============
 
-    static float BytesToMB(long bytes) => (float)(bytes / (1024.0 * 1024.0));
+    static float BytesToMB(long bytes) => (float)(bytes / MetricsConfig.BYTES_TO_MB_DIVISOR);
 
     static double SafeFileMB(string file)
     {
-        try { var fi = new FileInfo(file); if (fi.Exists) return fi.Length / (1024.0 * 1024.0); }
-        catch { /* ignore */ }
+        try 
+        { 
+            var fi = new FileInfo(file); 
+            if (fi.Exists) return fi.Length / MetricsConfig.BYTES_TO_MB_DIVISOR; 
+        }
+        catch (System.Exception ex) 
+        { 
+            UnityEngine.Debug.LogError($"[Metrics] Erro ao obter tamanho do arquivo {file}: {ex.Message}");
+        }
         return 0;
     }
 
     static string Safe(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
-        // sem vírgulas; CSV usa vírgula como separador
-        return "\"" + s.Replace("\"", "''") + "\"";
+        // Escape correto de aspas em CSV: substituir " por ""
+        return "\"" + s.Replace("\"", "\"\"") + "\"";
     }
 
     public async Task MeasureFpsWindowWithCallback(float seconds, Action<float> onTick)
@@ -229,22 +218,39 @@ public class Metrics : MonoBehaviour
         {
             await Task.Yield();
             float dt = Time.unscaledDeltaTime;
-            if (dt > 0f && dt < 1f) _frameDt.Add(dt);
+            if (dt > MetricsConfig.MIN_FRAME_DELTA_TIME && dt < MetricsConfig.MAX_FRAME_DELTA_TIME) 
+                _frameDt.Add(dt);
             t += dt;
 
             onTick?.Invoke(Mathf.Max(0f, seconds - t));
         }
 
-        if (_frameDt.Count > 0)
-        {
-            var fps = _frameDt.Select(d => 1f / d).ToArray();
-            _fpsAvg = fps.Average();
+        CalculateFpsStatistics();
+    }
+    
+    /// <summary>
+    /// Calcula estatísticas de FPS a partir dos dados coletados em _frameDt
+    /// </summary>
+    private void CalculateFpsStatistics()
+    {
+        if (_frameDt.Count == 0) return;
+        
+        var fpsSamples = _frameDt.Select(dt => 1f / dt).ToArray();
+        _fpsAvg = fpsSamples.Average();
+        _fpsMin = fpsSamples.Min();
+        _fpsMax = fpsSamples.Max();
 
-            Array.Sort(fps);
-            int n = fps.Length;
-            int idx = Mathf.Clamp(Mathf.FloorToInt(n * 0.01f) - 1, 0, n - 1); // 1% low
-            _fpsP01 = fps[idx];
-        }
+        // Calcular mediana
+        Array.Sort(fpsSamples);
+        int n = fpsSamples.Length;
+        if (n % 2 == 0)
+            _fpsMedian = (fpsSamples[n / 2 - 1] + fpsSamples[n / 2]) / 2.0;
+        else
+            _fpsMedian = fpsSamples[n / 2];
+
+        // 1% low
+        int idx = Math.Max(0, (int)Math.Floor(n * 0.01) - 1);
+        _fpsP01 = fpsSamples[Math.Clamp(idx, 0, n - 1)];
     }
 
 }

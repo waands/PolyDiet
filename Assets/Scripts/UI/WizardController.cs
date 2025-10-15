@@ -315,6 +315,8 @@ public class WizardController : MonoBehaviour
 
     async Task DoRunTestsAsync()
     {
+        int numberOfTests = Metrics.Instance ? Metrics.Instance.numberOfTests : 3;
+        
         foreach (var v in _runOrder)
         {
             var variants = viewer.GetAvailableVariantsPublic(_modelName);
@@ -322,37 +324,46 @@ public class WizardController : MonoBehaviour
 
             string path = viewer.ResolvePath(_modelName, v);
 
-            // Begin (antes do load)
-            Metrics.Instance?.BeginLoad(_modelName, v, path);
-
-            // Carrega (sem métricas)
-            bool ok = await viewer.LoadOnlyAsync(_modelName, v);
-
-            // End do load
-            if (Metrics.Instance != null) await Metrics.Instance.EndLoad(ok);
-
-            if (!ok)
+            // Executar múltiplos testes para cada variante
+            for (int testNumber = 1; testNumber <= numberOfTests; testNumber++)
             {
-                bodyText?.SetText($"Falha ao carregar \"{_modelName}\" ({v}). Pulando…");
-                continue;
-            }
+                bodyText?.SetText($"Teste {testNumber}/{numberOfTests} - \"{_modelName}\" ({v})");
+                
+                // Begin (antes do load) - agora com número do teste
+                Metrics.Instance?.BeginLoad(_modelName, v, path, testNumber);
 
-            // Medição com contagem regressiva
-            float secs = Metrics.Instance ? Metrics.Instance.fpsWindowSeconds : 5f;
-            if (Metrics.Instance != null)
-            {
-                await Metrics.Instance.MeasureFpsWindowWithCallback(secs, (remaining) =>
+                // Carrega (sem métricas)
+                bool ok = await viewer.LoadOnlyAsync(_modelName, v);
+
+                // End do load
+                if (Metrics.Instance != null) await Metrics.Instance.EndLoad(ok);
+
+                if (!ok)
                 {
-                    bodyText?.SetText($"Rodando \"{_modelName}\" ({v}) — medindo {remaining:0.0}s…");
-                });
-                Metrics.Instance.WriteCsv();
-            }
+                    bodyText?.SetText($"Falha ao carregar \"{_modelName}\" ({v}) - Teste {testNumber}. Pulando…");
+                    continue;
+                }
 
-            // Limpar cache entre runs
-            await ClearBetweenRunsAsync();
+                // Medição com contagem regressiva
+                float secs = Metrics.Instance ? Metrics.Instance.fpsWindowSeconds : 5f;
+                if (Metrics.Instance != null)
+                {
+                    await Metrics.Instance.MeasureFpsWindowWithCallback(secs, (remaining) =>
+                    {
+                        bodyText?.SetText($"Teste {testNumber}/{numberOfTests} - \"{_modelName}\" ({v}) — medindo {remaining:0.0}s…");
+                    });
+                    Metrics.Instance.WriteCsv();
+                }
+
+                // Limpar cache entre runs (exceto no último teste da variante)
+                if (testNumber < numberOfTests)
+                {
+                    await ClearBetweenRunsAsync();
+                }
+            }
         }
 
-        bodyText?.SetText("Testes concluídos. CSV atualizado.");
+        bodyText?.SetText("Testes concluídos. CSVs atualizados.");
     }
 
 
