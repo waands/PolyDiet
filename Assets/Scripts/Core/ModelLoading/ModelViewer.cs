@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using Diagnostics = System.Diagnostics;
+using PolyDiet.UI.Events;
 using UDebug = UnityEngine.Debug;
 using UI = UnityEngine.UI;
 using UApp = UnityEngine.Application;
@@ -1099,10 +1100,7 @@ public class ModelViewer : MonoBehaviour
                 ClearSpawn(); 
                 
                 // Notificar erro via eventos
-                if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
-                {
-                    eventListener.NotifyModelLoadError(modelName, variant, "Falha no parsing do arquivo GLTF");
-                }
+                GameEvents.OnModelLoadError?.Invoke(modelName, variant, "Falha no parsing do arquivo GLTF");
             }
             else
             {
@@ -1112,10 +1110,7 @@ public class ModelViewer : MonoBehaviour
                 NormalizeModelScale(_currentContainer);
                 
                 // Notificar sucesso via eventos
-                if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
-                {
-                    eventListener.NotifyModelLoaded(modelName, variant);
-                }
+                GameEvents.OnModelLoaded?.Invoke(modelName, variant);
             }
             
             return ok;
@@ -1127,10 +1122,7 @@ public class ModelViewer : MonoBehaviour
             ClearSpawn();
             
             // Notificar erro via eventos
-            if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
-            {
-                eventListener.NotifyModelLoadError(modelName, variant, ex.Message);
-            }
+            GameEvents.OnModelLoadError?.Invoke(modelName, variant, ex.Message);
             
             return false;
         }
