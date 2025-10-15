@@ -20,8 +20,6 @@ namespace PolyDiet.UI.Controllers
         
         protected override void Awake()
         {
-            base.Awake();
-            
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_hudController == null)
             {

@@ -20,8 +20,6 @@ namespace PolyDiet.Core.ModelLoading
         
         protected override void Awake()
         {
-            base.Awake();
-            
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_modelViewer == null)
             {

@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Profiling;
-using System.Globalization;
 using UnityEngine.SceneManagement;
 
 public class Metrics : MonoBehaviour

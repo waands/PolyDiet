@@ -20,8 +20,6 @@ namespace PolyDiet.Core.Camera
         
         protected override void Awake()
         {
-            base.Awake();
-            
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_camera == null)
             {
