@@ -208,7 +208,12 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_modelViewer != null)
             {
-                return _modelViewer.GetAvailableVariantsPublic();
+                string selectedModel = _modelViewer.GetSelectedModelNamePublic();
+                if (!string.IsNullOrEmpty(selectedModel))
+                {
+                    var variants = _modelViewer.GetAvailableVariantsPublic(selectedModel);
+                    return variants.ToArray();
+                }
             }
             return new string[0];
         }
