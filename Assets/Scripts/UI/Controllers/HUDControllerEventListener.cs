@@ -18,7 +18,7 @@ namespace PolyDiet.UI.Controllers
         [SerializeField] private bool _handleUIEvents = true;
         [SerializeField] private bool _handleMetricsEvents = true;
         
-        protected override void Awake()
+        protected void Awake()
         {
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_hudController == null)

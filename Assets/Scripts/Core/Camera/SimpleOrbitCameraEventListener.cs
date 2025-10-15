@@ -18,7 +18,7 @@ namespace PolyDiet.Core.Camera
         [SerializeField] private float _defaultYaw = 30f;
         [SerializeField] private float _defaultPitch = 20f;
         
-        protected override void Awake()
+        protected void Awake()
         {
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_camera == null)

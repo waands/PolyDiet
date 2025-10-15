@@ -17,7 +17,7 @@ namespace PolyDiet.Core.ModelLoading
         [SerializeField] private bool _resetCamerasOnModeChange = true;
         [SerializeField] private bool _clearLabelsOnModeChange = true;
         
-        protected override void Awake()
+        protected void Awake()
         {
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_splitView == null)

@@ -18,7 +18,7 @@ namespace PolyDiet.Core.ModelLoading
         [SerializeField] private bool _notifyOnModelsListUpdate = true;
         [SerializeField] private bool _notifyOnLoadError = true;
         
-        protected override void Awake()
+        protected void Awake()
         {
             // Se não foi atribuído, tenta encontrar na mesma GameObject
             if (_modelViewer == null)
