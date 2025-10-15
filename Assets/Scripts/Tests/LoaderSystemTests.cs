@@ -138,12 +138,12 @@ namespace PolyDiet.Tests
                 {
                     string tempOutput = Path.Combine(Application.temporaryCachePath, "test_conversion.glb");
                     var conversionResult = await conversionManager.ConvertAsync(testObjPath, tempOutput);
-                    LogTestResult("Convert OBJ to GLB", conversionResult.Success, conversionResult.Message);
+                    LogTestResult("Convert OBJ to GLB", conversionResult.Success, conversionResult.ErrorMessage);
                     
                     if (conversionResult.Success && File.Exists(tempOutput))
                     {
-                        testResults += $"  📊 Entrada: {conversionResult.InputSize / 1024} KB\n";
-                        testResults += $"  📊 Saída: {conversionResult.OutputSize / 1024} KB\n";
+                        testResults += $"  📊 Entrada: {conversionResult.InputSizeBytes / 1024} KB\n";
+                        testResults += $"  📊 Saída: {conversionResult.OutputSizeBytes / 1024} KB\n";
                         
                         // Limpa arquivo temporário
                         File.Delete(tempOutput);
