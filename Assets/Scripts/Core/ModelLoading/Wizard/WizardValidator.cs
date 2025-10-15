@@ -47,7 +47,7 @@ namespace PolyDiet.Core.ModelLoading.Wizard
             {
                 // Verifica ferramentas de conversão
                 var conversionManager = new PolyDiet.Core.ModelLoading.Conversion.ConversionManager();
-                var availableStrategies = await conversionManager.GetAvailableStrategiesAsync();
+                var availableStrategies = await conversionManager.GetAvailableStrategiesAsync(".obj");
                 
                 if (availableStrategies.Count == 0)
                 {
