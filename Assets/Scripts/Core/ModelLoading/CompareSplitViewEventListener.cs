@@ -64,25 +64,35 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_splitView == null)
             {
-                LogWarning("HandleCompareModeChanged", "SplitView reference is null");
+                LogError("HandleCompareModeChanged", "SplitView reference is null - cannot process compare mode change");
                 return;
             }
             
-            LogDebug("HandleCompareModeChanged", $"Compare mode: {isActive}");
+            LogDebug("HandleCompareModeChanged", $"Processing compare mode change: {isActive}");
             
-            if (_autoActivateOnCompareMode)
+            try
             {
-                _splitView.SetCompareActive(isActive);
+                if (_autoActivateOnCompareMode)
+                {
+                    _splitView.SetCompareActive(isActive);
+                    LogDebug("HandleCompareModeChanged", $"SplitView compare mode set to: {isActive}");
+                }
+                
+                if (isActive && _resetCamerasOnModeChange)
+                {
+                    _splitView.ResetAllComparisonCameras();
+                    LogDebug("HandleCompareModeChanged", "Reset all comparison cameras");
+                }
+                
+                if (!isActive && _clearLabelsOnModeChange)
+                {
+                    _splitView.ClearLabels();
+                    LogDebug("HandleCompareModeChanged", "Cleared split view labels");
+                }
             }
-            
-            if (isActive && _resetCamerasOnModeChange)
+            catch (System.Exception e)
             {
-                _splitView.ResetAllComparisonCameras();
-            }
-            
-            if (!isActive && _clearLabelsOnModeChange)
-            {
-                _splitView.ClearLabels();
+                LogError("HandleCompareModeChanged", $"Failed to process compare mode change: {e.Message}");
             }
         }
         
@@ -93,14 +103,24 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_splitView == null)
             {
-                LogWarning("HandleModelLoaded", "SplitView reference is null");
+                LogError("HandleModelLoaded", "SplitView reference is null - cannot process model load");
                 return;
             }
             
-            LogDebug("HandleModelLoaded", $"Model loaded: {modelName} ({variant})");
+            LogDebug("HandleModelLoaded", $"Processing model load: {modelName} ({variant})");
             
             // Se estivermos em modo de comparação, podemos atualizar as labels
             // ou fazer outras configurações específicas
+            try
+            {
+                // Aqui podemos adicionar lógica específica para quando um modelo é carregado
+                // Por exemplo, atualizar labels se estivermos em modo de comparação
+                LogDebug("HandleModelLoaded", $"Model loaded successfully: {modelName} ({variant})");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleModelLoaded", $"Failed to process model load: {e.Message}");
+            }
         }
         
         /// <summary>
@@ -110,15 +130,23 @@ namespace PolyDiet.Core.ModelLoading
         {
             if (_splitView == null)
             {
-                LogWarning("HandleModelUnloaded", "SplitView reference is null");
+                LogError("HandleModelUnloaded", "SplitView reference is null - cannot process model unload");
                 return;
             }
             
-            LogDebug("HandleModelUnloaded", "Model unloaded");
+            LogDebug("HandleModelUnloaded", "Processing model unload");
             
-            // Limpa labels e força cleanup das câmeras
-            _splitView.ClearLabels();
-            _splitView.ForceCleanupCameras();
+            try
+            {
+                // Limpa labels e força cleanup das câmeras
+                _splitView.ClearLabels();
+                _splitView.ForceCleanupCameras();
+                LogDebug("HandleModelUnloaded", "Successfully cleared labels and cleaned up cameras");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleModelUnloaded", $"Failed to process model unload: {e.Message}");
+            }
         }
         
         /// <summary>
