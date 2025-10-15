@@ -310,41 +310,54 @@ def calculate_all_stats(df, variants):
 # =====================================================================
 
 def create_bar_chart(df, variants, metric, title, unit, color_map):
-    """Cria gráfico de barras comparativo"""
+    """Cria gráfico de barras comparativo melhorado"""
     values = []
     colors = []
+    errors = []
     
     for variant in variants:
         variant_data = df[df['variant'] == variant]
         if len(variant_data) > 0:
-            values.append(variant_data[metric].mean())
+            mean_val = variant_data[metric].mean()
+            std_val = variant_data[metric].std()
+            values.append(mean_val)
+            errors.append(std_val)
             colors.append(color_map.get(variant, '#999'))
         else:
             values.append(0)
+            errors.append(0)
             colors.append('#999')
     
     fig = go.Figure(data=[
         go.Bar(
             x=variants,
             y=values,
+            error_y=dict(type='data', array=errors, visible=True),
             marker_color=colors,
-            text=[f"{v:.2f} {unit}" for v in values],
-            textposition='auto',
+            text=[f"{v:.1f}±{e:.1f}" for v, e in zip(values, errors)],
+            textposition='outside',
+            textfont=dict(size=12, color='black'),
+            marker_line=dict(width=2, color='white'),
+            opacity=0.8
         )
     ])
     
     fig.update_layout(
-        title=title,
-        xaxis_title="Variante",
-        yaxis_title=unit,
-        template='plotly_white'
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title="Variante", titlefont=dict(size=14)),
+        yaxis=dict(title=unit, titlefont=dict(size=14)),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
 
 
 def create_box_plots(df, variants, metric, title, unit, color_map):
-    """Cria box plots para análise de distribuição"""
+    """Cria box plots melhorados para análise de distribuição"""
     fig = go.Figure()
     
     for variant in variants:
@@ -354,21 +367,31 @@ def create_box_plots(df, variants, metric, title, unit, color_map):
                 y=variant_data[metric],
                 name=variant,
                 marker_color=color_map.get(variant, '#999'),
-                boxmean='sd'  # Mostra média e desvio padrão
+                boxmean='sd',
+                boxpoints='outliers',
+                jitter=0.3,
+                pointpos=-1.8,
+                marker=dict(size=6, opacity=0.7),
+                line=dict(width=2),
+                fillcolor=f"rgba({int(color_map.get(variant, '#999')[1:3], 16)}, {int(color_map.get(variant, '#999')[3:5], 16)}, {int(color_map.get(variant, '#999')[5:7], 16)}, 0.3)"
             ))
     
     fig.update_layout(
-        title=title,
-        yaxis_title=unit,
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        yaxis=dict(title=unit, titlefont=dict(size=14)),
         template='plotly_white',
-        showlegend=True
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        showlegend=True,
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
 
 
 def create_scatter_plot(df, variants, x_metric, y_metric, title, color_map):
-    """Cria scatter plot para análise de relações"""
+    """Cria scatter plot melhorado para análise de relações"""
     fig = go.Figure()
     
     for variant in variants:
@@ -380,24 +403,34 @@ def create_scatter_plot(df, variants, x_metric, y_metric, title, color_map):
                 mode='markers',
                 name=variant,
                 marker=dict(
-                    size=10,
+                    size=12,
                     color=color_map.get(variant, '#999'),
-                    opacity=0.7
-                )
+                    opacity=0.7,
+                    line=dict(width=2, color='white')
+                ),
+                text=[f"Teste {i+1}" for i in range(len(variant_data))],
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"{x_metric}: %{{x}}<br>" +
+                            f"{y_metric}: %{{y}}<br>" +
+                            "Teste: %{text}<extra></extra>"
             ))
     
     fig.update_layout(
-        title=title,
-        xaxis_title=x_metric.replace('_', ' ').title(),
-        yaxis_title=y_metric.replace('_', ' ').title(),
-        template='plotly_white'
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=x_metric.replace('_', ' ').title(), titlefont=dict(size=14)),
+        yaxis=dict(title=y_metric.replace('_', ' ').title(), titlefont=dict(size=14)),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
 
 
 def create_heatmap(df, metrics):
-    """Cria heatmap de correlações entre métricas"""
+    """Cria heatmap melhorado de correlações entre métricas"""
     corr_matrix = df[metrics].corr()
     
     fig = go.Figure(data=go.Heatmap(
@@ -408,19 +441,25 @@ def create_heatmap(df, metrics):
         zmid=0,
         text=corr_matrix.values.round(2),
         texttemplate='%{text}',
-        textfont={"size": 10}
+        textfont={"size": 12, "color": "white"},
+        hoverongaps=False,
+        hovertemplate='<b>%{y}</b> vs <b>%{x}</b><br>Correlação: %{z:.3f}<extra></extra>'
     ))
     
     fig.update_layout(
-        title="Correlação entre Métricas",
-        template='plotly_white'
+        title=dict(text="Correlação entre Métricas", font=dict(size=16, color='#2c3e50')),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
 
 
 def create_timeline_chart(df, variants, metric, title, unit, color_map):
-    """Cria gráfico de evolução temporal"""
+    """Cria gráfico melhorado de evolução temporal"""
     df_sorted = df.sort_values('timestamp').copy()
     fig = go.Figure()
     
@@ -432,21 +471,31 @@ def create_timeline_chart(df, variants, metric, title, unit, color_map):
                 y=variant_data[metric],
                 mode='lines+markers',
                 name=variant,
-                line=dict(color=color_map.get(variant, '#999'))
+                line=dict(color=color_map.get(variant, '#999'), width=3),
+                marker=dict(size=8, color=color_map.get(variant, '#999')),
+                text=[f"Teste {i+1}" for i in range(len(variant_data))],
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"Timestamp: %{{x}}<br>" +
+                            f"{metric}: %{{y}}<br>" +
+                            "Teste: %{text}<extra></extra>"
             ))
     
     fig.update_layout(
-        title=title,
-        xaxis_title="Timestamp",
-        yaxis_title=unit,
-        template='plotly_white'
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title="Timestamp", titlefont=dict(size=14)),
+        yaxis=dict(title=unit, titlefont=dict(size=14)),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
 
 
 def create_file_size_chart(file_infos, color_map):
-    """Cria gráfico de tamanho de arquivos"""
+    """Cria gráfico melhorado de tamanho de arquivos"""
     variants = [f.variant for f in file_infos]
     sizes = [f.size_mb for f in file_infos]
     colors = [color_map.get(v, '#999') for v in variants]
@@ -457,15 +506,22 @@ def create_file_size_chart(file_infos, color_map):
             y=sizes,
             marker_color=colors,
             text=[f"{s:.2f} MB" for s in sizes],
-            textposition='auto',
+            textposition='outside',
+            textfont=dict(size=12, color='black'),
+            marker_line=dict(width=2, color='white'),
+            opacity=0.8
         )
     ])
     
     fig.update_layout(
-        title="Tamanho dos Arquivos por Variante",
-        xaxis_title="Variante",
-        yaxis_title="Tamanho (MB)",
-        template='plotly_white'
+        title=dict(text="Tamanho dos Arquivos por Variante", font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title="Variante", titlefont=dict(size=14)),
+        yaxis=dict(title="Tamanho (MB)", titlefont=dict(size=14)),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
     )
     
     return fig
@@ -511,124 +567,189 @@ def create_executive_summary(model, df, variants, comparisons, file_infos):
     return create_html_section("Resumo Executivo", content)
 
 
-def create_comparison_table(comparisons):
-    """Cria tabela de comparação entre variantes"""
+def create_performance_comparison_table(comparisons):
+    """Cria tabela organizada de comparação de performance"""
     if not comparisons:
         return ""
     
-    rows = []
-    for key, comp in comparisons.items():
-        arrow = "↓" if comp['better'] else "↑"
-        color = "green" if comp['better'] else "red"
-        
-        rows.append(f"""
-        <tr>
-            <td>{comp['variant']}</td>
-            <td>{comp['metric']}</td>
-            <td>{comp['base']:.2f}</td>
-            <td>{comp['value']:.2f}</td>
-            <td style="color: {color}">{arrow} {comp['diff_pct']:.1f}%</td>
-        </tr>
-        """)
+    # Separar por métrica
+    fps_comparisons = {k: v for k, v in comparisons.items() if 'fps' in v['metric']}
+    load_comparisons = {k: v for k, v in comparisons.items() if 'load' in v['metric']}
+    mem_comparisons = {k: v for k, v in comparisons.items() if 'mem' in v['metric']}
     
-    table = f"""
-    <table>
-        <thead>
+    def create_metric_table(comparisons_dict, title, icon):
+        if not comparisons_dict:
+            return ""
+        
+        rows = []
+        for key, comp in comparisons_dict.items():
+            arrow = "↓" if comp['better'] else "↑"
+            color = "#28a745" if comp['better'] else "#dc3545"
+            improvement = "Melhora" if comp['better'] else "Piora"
+            
+            rows.append(f"""
             <tr>
-                <th>Variante</th>
-                <th>Métrica</th>
-                <th>Original</th>
-                <th>Valor</th>
-                <th>Diferença</th>
+                <td><span class="variant-badge variant-{comp['variant']}">{comp['variant']}</span></td>
+                <td>{comp['base']:.1f}</td>
+                <td>{comp['value']:.1f}</td>
+                <td style="color: {color}; font-weight: bold;">
+                    <span class="arrow">{arrow}</span> {comp['diff_pct']:.1f}%
+                    <small>({improvement})</small>
+                </td>
             </tr>
-        </thead>
-        <tbody>
-            {''.join(rows)}
-        </tbody>
-    </table>
+            """)
+        
+        return f"""
+        <div class="metric-table">
+            <h3>{icon} {title}</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Variante</th>
+                        <th>Original</th>
+                        <th>Valor</th>
+                        <th>Diferença</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+    
+    fps_table = create_metric_table(fps_comparisons, "Performance FPS", "🎯")
+    load_table = create_metric_table(load_comparisons, "Tempo de Carregamento", "⏱️")
+    mem_table = create_metric_table(mem_comparisons, "Uso de Memória", "💾")
+    
+    combined_tables = f"""
+    <div class="comparison-grid">
+        {fps_table}
+        {load_table}
+        {mem_table}
+    </div>
     """
     
-    return create_html_section("Comparação entre Variantes", table)
+    return create_html_section("📊 Comparação de Performance", combined_tables)
 
 
-def create_stats_table(all_stats):
-    """Cria tabela de estatísticas detalhadas"""
+def create_detailed_stats_tables(all_stats):
+    """Cria tabelas detalhadas de estatísticas organizadas por variante"""
     if not all_stats:
         return ""
     
-    rows = []
-    for variant, metrics in all_stats.items():
-        for metric_name, stats in metrics.items():
+    def create_variant_stats_table(variant, metrics_stats):
+        if not metrics_stats:
+            return ""
+        
+        rows = []
+        for metric_name, stats in metrics_stats.items():
             rows.append(f"""
             <tr>
-                <td>{variant}</td>
-                <td>{metric_name}</td>
-                <td>{stats.mean:.2f}</td>
-                <td>{stats.median:.2f}</td>
-                <td>{stats.std:.2f}</td>
-                <td>{stats.min:.2f}</td>
-                <td>{stats.max:.2f}</td>
+                <td class="metric-name">{metric_name.replace('_', ' ').title()}</td>
+                <td>{stats.mean:.1f}</td>
+                <td>{stats.median:.1f}</td>
+                <td>{stats.std:.1f}</td>
+                <td>{stats.min:.1f}</td>
+                <td>{stats.max:.1f}</td>
+                <td>{stats.count}</td>
             </tr>
             """)
+        
+        return f"""
+        <div class="variant-stats">
+            <h3><span class="variant-badge variant-{variant}">{variant}</span> - Estatísticas Detalhadas</h3>
+            <table class="stats-table">
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Média</th>
+                        <th>Mediana</th>
+                        <th>Desvio</th>
+                        <th>Mínimo</th>
+                        <th>Máximo</th>
+                        <th>Testes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
     
-    table = f"""
-    <table>
-        <thead>
-            <tr>
-                <th>Variante</th>
-                <th>Métrica</th>
-                <th>Média</th>
-                <th>Mediana</th>
-                <th>Desvio Padrão</th>
-                <th>Mínimo</th>
-                <th>Máximo</th>
-            </tr>
-        </thead>
-        <tbody>
-            {''.join(rows)}
-        </tbody>
-    </table>
+    tables = []
+    for variant, metrics_stats in all_stats.items():
+        tables.append(create_variant_stats_table(variant, metrics_stats))
+    
+    combined_tables = f"""
+    <div class="stats-grid">
+        {''.join(tables)}
+    </div>
     """
     
-    return create_html_section("Estatísticas Detalhadas", table)
+    return create_html_section("📈 Estatísticas Detalhadas por Variante", combined_tables)
 
 
 def create_file_info_section(file_infos, compression_ratios):
-    """Cria seção de informações de arquivos"""
+    """Cria seção melhorada de informações de arquivos"""
     if not file_infos:
         return ""
+    
+    def format_size(size_bytes):
+        if size_bytes < 1024:
+            return f"{size_bytes:.0f} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes/1024:.1f} KB"
+        else:
+            return f"{size_bytes/(1024*1024):.2f} MB"
     
     rows = []
     for file_info in file_infos:
         compression_text = ""
+        compression_badge = ""
         if file_info.variant in compression_ratios:
             comp = compression_ratios[file_info.variant]
             compression_text = f"({comp['compression_pct']:.1f}% menor)"
+            if comp['compression_pct'] > 50:
+                compression_badge = '<span class="badge badge-success">Excelente</span>'
+            elif comp['compression_pct'] > 25:
+                compression_badge = '<span class="badge badge-warning">Bom</span>'
+            else:
+                compression_badge = '<span class="badge badge-info">Moderado</span>'
         
         rows.append(f"""
         <tr>
-            <td>{file_info.variant}</td>
-            <td>{file_info.size_mb:.2f} MB {compression_text}</td>
-            <td>{file_info.path}</td>
+            <td><span class="variant-badge variant-{file_info.variant}">{file_info.variant}</span></td>
+            <td class="size-cell">
+                <strong>{file_info.size_mb:.2f} MB</strong>
+                <small>{compression_text}</small>
+                {compression_badge}
+            </td>
+            <td class="path-cell">
+                <code>{file_info.path}</code>
+            </td>
         </tr>
         """)
     
     table = f"""
-    <table>
-        <thead>
-            <tr>
-                <th>Variante</th>
-                <th>Tamanho</th>
-                <th>Caminho</th>
-            </tr>
-        </thead>
-        <tbody>
-            {''.join(rows)}
-        </tbody>
-    </table>
+    <div class="file-info-table">
+        <table class="file-table">
+            <thead>
+                <tr>
+                    <th>Variante</th>
+                    <th>Tamanho & Compressão</th>
+                    <th>Caminho do Arquivo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+    </div>
     """
     
-    return create_html_section("Informações de Arquivos", table)
+    return create_html_section("📁 Informações dos Arquivos", table)
 
 
 def build_html(model, sections):
@@ -641,95 +762,296 @@ def build_html(model, sections):
     <meta charset="UTF-8">
     <title>Advanced Report - {model}</title>
     <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             padding: 20px;
-            background: #f5f5f5;
         }}
+        
         .container {{
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
         }}
-        h1 {{
-            color: #333;
-            border-bottom: 3px solid #4CAF50;
-            padding-bottom: 10px;
+        
+        .header {{
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
         }}
-        h2 {{
-            color: #555;
-            margin-top: 30px;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 8px;
+        
+        .header h1 {{
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }}
+        
+        .header .subtitle {{
+            font-size: 1.2em;
+            opacity: 0.9;
+        }}
+        
+        .content {{
+            padding: 40px;
+        }}
+        
         .section {{
-            margin: 30px 0;
+            margin: 50px 0;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #4CAF50;
         }}
+        
+        .section h2 {{
+            color: #2c3e50;
+            font-size: 1.8em;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        
         .summary-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+            margin: 25px 0;
         }}
+        
         .summary-card {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 6px;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
             text-align: center;
-            border: 1px solid #e0e0e0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
         }}
+        
+        .summary-card:hover {{
+            transform: translateY(-5px);
+        }}
+        
         .summary-card h3 {{
-            margin: 0 0 10px 0;
             color: #666;
             font-size: 14px;
-            font-weight: normal;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }}
+        
         .big-number {{
-            font-size: 28px;
+            font-size: 2.5em;
             font-weight: bold;
             color: #4CAF50;
             margin: 0;
         }}
+        
+        .comparison-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin: 25px 0;
+        }}
+        
+        .metric-table {{
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }}
+        
+        .metric-table h3 {{
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }}
+        
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            margin: 25px 0;
+        }}
+        
+        .variant-stats {{
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }}
+        
+        .variant-stats h3 {{
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }}
+        
         table {{
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }}
-        th, td {{
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }}
+        
         th {{
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        td {{
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
+        }}
+        
+        tr:hover {{
+            background: #f8f9fa;
+        }}
+        
+        .variant-badge {{
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .variant-original {{
+            background: #2196F3;
+            color: white;
+        }}
+        
+        .variant-draco {{
+            background: #FF9800;
+            color: white;
+        }}
+        
+        .variant-meshopt {{
             background: #4CAF50;
             color: white;
+        }}
+        
+        .badge {{
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
             font-weight: bold;
+            margin-left: 8px;
         }}
-        tr:hover {{
-            background: #f5f5f5;
+        
+        .badge-success {{
+            background: #28a745;
+            color: white;
         }}
+        
+        .badge-warning {{
+            background: #ffc107;
+            color: #212529;
+        }}
+        
+        .badge-info {{
+            background: #17a2b8;
+            color: white;
+        }}
+        
+        .arrow {{
+            font-size: 16px;
+            margin-right: 5px;
+        }}
+        
         .chart {{
-            margin: 20px 0;
+            margin: 30px 0;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }}
+        
+        .metric-name {{
+            font-weight: bold;
+            color: #2c3e50;
+        }}
+        
+        .size-cell {{
+            text-align: center;
+        }}
+        
+        .path-cell {{
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }}
+        
         .timestamp {{
             color: #888;
             font-size: 14px;
-            text-align: right;
-            margin-top: 30px;
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }}
+        
+        @media (max-width: 768px) {{
+            .comparison-grid,
+            .stats-grid {{
+                grid-template-columns: 1fr;
+            }}
+            
+            .summary-grid {{
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }}
+            
+            .container {{
+                margin: 10px;
+                border-radius: 10px;
+            }}
+            
+            .content {{
+                padding: 20px;
+            }}
+            
+            .section {{
+                padding: 20px;
+            }}
         }}
     </style>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>📊 Advanced Metrics Report - {model}</h1>
-        {''.join(sections)}
-        <div class="timestamp">
-            Gerado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        <div class="header">
+            <h1>📊 Advanced Metrics Report</h1>
+            <div class="subtitle">{model}</div>
+        </div>
+        <div class="content">
+            {''.join(sections)}
+            <div class="timestamp">
+                Gerado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            </div>
         </div>
     </div>
 </body>
@@ -800,11 +1122,11 @@ def main():
         fig = create_file_size_chart(file_infos, color_map)
         sections.append(create_html_section("Tamanho dos Arquivos", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="file_size")}</div>'))
     
-    # 3. Tabela de Comparação
-    sections.append(create_comparison_table(comparisons))
+    # 3. Tabelas de Comparação Organizadas
+    sections.append(create_performance_comparison_table(comparisons))
     
-    # 4. Estatísticas Detalhadas
-    sections.append(create_stats_table(all_stats))
+    # 4. Estatísticas Detalhadas por Variante
+    sections.append(create_detailed_stats_tables(all_stats))
     
     # 5. Gráficos de Barras
     for metric, title, unit in [("load_ms", "Tempo de Carregamento", "ms"), 
