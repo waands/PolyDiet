@@ -11,7 +11,9 @@ public class ReportRunner : MonoBehaviour
     [Header("Paths")]
     [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha.")]
     public string pythonPath = ""; // se vazio, escolhemos automaticamente
-    [Tooltip("Caminho para o metrics_report.py")]
+    [Tooltip("Usar script avançado com análises complexas (recomendado)")]
+    public bool useAdvancedScript = true;
+    [Tooltip("Caminho para o metrics_report.py (LEGACY)")]
     public string scriptPath = ""; // ex.: Application.dataPath + "/../reports_tool/metrics_report.py"
     [Tooltip("Opcional: binário empacotado (PyInstaller). Se preenchido, ignora pythonPath/scriptPath.")]
     public string packagedExePath = ""; // ex.: Application.dataPath + "/../reports_tool/dist/metrics_report.exe"
@@ -58,7 +60,29 @@ public class ReportRunner : MonoBehaviour
 
     string OutDirDefault(string model)
     {
-        return MetricsPathProvider.GetModelReportsDirectory(model);
+        // Nova lógica: salva dentro da pasta do modelo com timestamp
+        return MetricsPathProvider.GetModelReportTimestampDirectory(model);
+    }
+    
+    /// <summary>
+    /// Coleta informações de arquivos GLB do modelo
+    /// </summary>
+    string[] CollectFileInfo(string modelName)
+    {
+        var info = new List<string>();
+        var modelDir = MetricsPathProvider.GetModelDirectory(modelName);
+        
+        foreach (var variant in new[] { "original", "draco", "meshopt" })
+        {
+            var glbPath = Path.Combine(modelDir, variant, "model.glb");
+            if (File.Exists(glbPath))
+            {
+                var fileInfo = new FileInfo(glbPath);
+                info.Add($"{variant}:{fileInfo.Length}:{glbPath}");
+            }
+        }
+        
+        return info.ToArray();
     }
 
     /// <summary>
@@ -87,35 +111,34 @@ public class ReportRunner : MonoBehaviour
         _isGeneratingReport = true; // BLOQUEIA o sistema aqui
 
         string model = ResolveModel();
+        
+        // NOVO: validação - não aceitar "all"
+        if (model.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            Log("<color=orange>Reports globais não são mais suportados. Selecione um modelo específico.</color>");
+            _isGeneratingReport = false;
+            return;
+        }
+        
         string outDir = string.IsNullOrEmpty(outDirOverride) ? OutDirDefault(model) : outDirOverride;
         Directory.CreateDirectory(outDir);
 
-        // Lógica inteligente de seleção de CSVs
+        // Lógica de seleção de CSV para modelo específico
         string[] csvPaths;
-
-        if (model.Equals("all", StringComparison.OrdinalIgnoreCase))
+        string specificCsvPath = MetricsPathProvider.GetSingleModelCsvPath(model);
+        
+        if (!string.IsNullOrEmpty(specificCsvPath) && File.Exists(specificCsvPath))
         {
-            // Se o modelo for "all", pegue todos os CSVs
-            csvPaths = MetricsPathProvider.GetAllModelCsvPaths();
-            Log("[Report] Modo 'all' detectado. Procurando todos os arquivos CSV.");
+            csvPaths = new string[] { specificCsvPath };
+            Log($"[Report] Usando CSV para o modelo '{model}': {specificCsvPath}");
         }
         else
         {
-            // Se um modelo específico foi selecionado, pegue APENAS o CSV daquele modelo
-            string specificCsvPath = MetricsPathProvider.GetSingleModelCsvPath(model);
-            if (!string.IsNullOrEmpty(specificCsvPath) && File.Exists(specificCsvPath))
-            {
-                csvPaths = new string[] { specificCsvPath };
-                Log($"[Report] Modo específico detectado. Usando CSV para o modelo '{model}': {specificCsvPath}");
-            }
-            else
-            {
-                csvPaths = Array.Empty<string>();
-                Log($"<color=orange>[Report] Nenhum arquivo CSV encontrado para o modelo específico '{model}' em: {specificCsvPath}</color>");
-            }
+            csvPaths = Array.Empty<string>();
+            Log($"<color=orange>[Report] Nenhum arquivo CSV encontrado para o modelo '{model}'</color>");
         }
 
-        // Fallback: se não há CSVs de modelos, tenta usar CSV específico se fornecido
+        // Fallback: se não há CSV, tenta usar CSV específico se fornecido
         if (csvPaths.Length == 0 && !string.IsNullOrEmpty(csvPathOverride))
         {
             if (File.Exists(csvPathOverride))
@@ -127,7 +150,8 @@ public class ReportRunner : MonoBehaviour
 
         if (csvPaths.Length == 0)
         {
-            Log("Nenhum arquivo CSV de modelo encontrado. Verifique se os testes foram executados.");
+            Log($"<color=orange>Nenhum arquivo CSV encontrado para o modelo '{model}'. Execute os testes primeiro.</color>");
+            _isGeneratingReport = false;
             return;
         }
 
@@ -137,16 +161,39 @@ public class ReportRunner : MonoBehaviour
             Log($"  - {path}");
         }
 
+        // NOVO: Coletar informações de arquivos
+        string[] fileInfo = CollectFileInfo(model);
+        string fileInfoArgs = fileInfo.Length > 0 
+            ? " " + string.Join(" ", fileInfo.Select(f => $"--file-info \"{f}\""))
+            : "";
+        
+        Log($"[Report] Coletadas {fileInfo.Length} informações de arquivos");
+        
         // Construir lista de variantes
         string variants = $"{MetricsConfig.BASE_VARIANT},{MetricsConfig.DRACO_VARIANT},{MetricsConfig.MESHOPT_VARIANT}";
 
-        // MODIFICAÇÃO: Juntar todos os caminhos em uma única string, separados por espaço
-        // Colocamos aspas em cada caminho para lidar com espaços no nome
+        // Juntar todos os caminhos em uma única string, separados por espaço
         string allCsvPaths = string.Join(" ", csvPaths.Select(p => $"\"{p}\""));
 
-        // MODIFICAÇÃO: Construir os argumentos para uma única execução
-        // Trocamos --auto-discover por --csv-files (que vamos criar no python)
-        string args = $"\"{scriptPath}\" --out \"{outDir}\" --model {model} --variants {variants} --last-n {lastN} --csv-files {allCsvPaths}";
+        // Escolher script
+        string actualScriptPath = scriptPath;
+        if (useAdvancedScript)
+        {
+            // Usa script avançado por padrão
+            string advancedScriptPath = Path.Combine(UApp.dataPath, "Scripts", "Metrics", "reports_tool", "advanced_metrics_report.py");
+            if (File.Exists(advancedScriptPath))
+            {
+                actualScriptPath = advancedScriptPath;
+                Log($"[Report] Usando script avançado: {actualScriptPath}");
+            }
+            else
+            {
+                Log($"<color=orange>[Report] Script avançado não encontrado em: {advancedScriptPath}. Usando script padrão.</color>");
+            }
+        }
+        
+        // Construir os argumentos para execução
+        string args = $"\"{actualScriptPath}\" --out \"{outDir}\" --model {model} --variants {variants} --last-n {lastN} --csv-files {allCsvPaths}{fileInfoArgs}";
         
             if (genHtml) args += " --html";
             if (genPdf)  args += " --pdf";
@@ -158,7 +205,7 @@ public class ReportRunner : MonoBehaviour
         if (!string.IsNullOrEmpty(packagedExePath))
         {
             file = packagedExePath;
-            finalArgs = args.Replace($"\"{scriptPath}\" ", "");
+            finalArgs = args.Replace($"\"{actualScriptPath}\" ", "");
         }
         else
         {
@@ -166,6 +213,7 @@ public class ReportRunner : MonoBehaviour
             if (string.IsNullOrEmpty(file)) 
             { 
                 Log("Python não encontrado."); 
+                _isGeneratingReport = false;
                 return; 
             }
             finalArgs = args;
@@ -196,7 +244,7 @@ public class ReportRunner : MonoBehaviour
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? System.Environment.CurrentDirectory,
+                WorkingDirectory = Path.GetDirectoryName(actualScriptPath) ?? System.Environment.CurrentDirectory,
             };
             // força UTF-8
             psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";

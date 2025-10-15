@@ -40,21 +40,56 @@ public static class MetricsPathProvider
     }
     
     /// <summary>
-    /// Obtém o diretório de saída dos relatórios
+    /// Obtém o diretório de saída dos relatórios (LEGACY - mantido para compatibilidade)
     /// </summary>
+    [System.Obsolete("Use GetModelReportsDirectory(modelName) para salvar dentro da pasta do modelo")]
     public static string GetReportsDirectory()
     {
         return CrossPlatformHelper.CombinePaths(Application.persistentDataPath, MetricsConfig.REPORTS_DIR_NAME);
     }
     
     /// <summary>
-    /// Obtém o diretório de saída dos relatórios para um modelo específico
+    /// Obtém o diretório de reports de um modelo específico (dentro da pasta do modelo)
     /// </summary>
     public static string GetModelReportsDirectory(string modelName)
     {
-        var bucket = modelName == "all" ? "global" : modelName;
-        var timestamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        return CrossPlatformHelper.CombinePaths(GetReportsDirectory(), bucket, timestamp);
+        return CrossPlatformHelper.CombinePaths(GetModelDirectory(modelName), "reports");
+    }
+    
+    /// <summary>
+    /// Obtém o diretório de um report específico com timestamp
+    /// </summary>
+    public static string GetModelReportTimestampDirectory(string modelName, string timestamp = null)
+    {
+        if (string.IsNullOrEmpty(timestamp))
+        {
+            timestamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        }
+        return CrossPlatformHelper.CombinePaths(GetModelReportsDirectory(modelName), timestamp);
+    }
+    
+    /// <summary>
+    /// Lista todos os reports de um modelo (ordenados por data, mais recente primeiro)
+    /// </summary>
+    public static string[] GetModelReportsList(string modelName)
+    {
+        var reportsDir = GetModelReportsDirectory(modelName);
+        if (!Directory.Exists(reportsDir))
+            return new string[0];
+        
+        var dirs = Directory.GetDirectories(reportsDir);
+        System.Array.Sort(dirs);
+        System.Array.Reverse(dirs); // Mais recente primeiro
+        return dirs;
+    }
+    
+    /// <summary>
+    /// Obtém o caminho do report mais recente de um modelo
+    /// </summary>
+    public static string GetLatestModelReport(string modelName)
+    {
+        var reports = GetModelReportsList(modelName);
+        return reports.Length > 0 ? reports[0] : null;
     }
     
     /// <summary>

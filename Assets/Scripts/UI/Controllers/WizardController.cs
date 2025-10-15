@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,10 +7,13 @@ using TMPro;
 using UnityEngine;
 using UI = UnityEngine.UI;
 using UApp = UnityEngine.Application;
+using PolyDiet.Core.ModelLoading.Validation;
+using PolyDiet.Core.ModelLoading.Conversion;
+using PolyDiet.Core.ModelLoading.Compression;
 
 public class WizardController : MonoBehaviour
 {
-    public enum Step { Import, AskCompress, Compressing, AskRun, Running, Done, AskOverwriteImport, AskOverwriteCompress }
+    public enum Step { Import, AskCompress, Compressing, AskRun, Running, Done, AskOverwriteImport, AskOverwriteCompress, ModelAlreadyComplete }
 
     [Header("Refs")]
     public ModelViewer viewer;          // arraste seu SceneRoot (ModelViewer)
@@ -92,6 +96,15 @@ public class WizardController : MonoBehaviour
                     $"O modelo \"{_modelName}\" já possui variantes comprimidas.\nDeseja comprimir novamente?");
                 SetButtons("Sim, recomprimir", "Não, pular", back:true);
                 break;
+
+            case Step.ModelAlreadyComplete:
+                SetUI($"Modelo \"{_modelName}\" já está completo ✅", 
+                    $"O modelo \"{_modelName}\" já foi processado completamente:\n" +
+                    "• Arquivo original válido\n" +
+                    "• Variantes comprimidas disponíveis\n" +
+                    "• Pronto para testes");
+                SetButtons("Rodar testes", "Pular para próximo", back:true);
+                break;
         }
     }
 
@@ -154,6 +167,13 @@ public class WizardController : MonoBehaviour
                 await DoCompressBothAsync();
                 Go(Step.AskRun);
                 break;
+
+            case Step.ModelAlreadyComplete:
+                // Usuário escolheu rodar testes do modelo já completo
+                Go(Step.Running);
+                await DoRunTestsAsync();
+                Go(Step.Done);
+                break;
         }
     }
 
@@ -190,6 +210,11 @@ public class WizardController : MonoBehaviour
                 // Usuário cancelou recomprimir - pula para testes
                 Go(Step.AskRun);
                 break;
+
+            case Step.ModelAlreadyComplete:
+                // Usuário escolheu pular para próximo modelo
+                Go(Step.Import);
+                break;
         }
         await Task.Yield();
     }
@@ -221,8 +246,16 @@ public class WizardController : MonoBehaviour
         // Deduza o nome do modelo do arquivo
         _modelName = Path.GetFileNameWithoutExtension(_importSourcePath);
         
-        // Verifica se o modelo já existe
-        if (viewer.ModelExists(_modelName))
+        // Verifica se o modelo já existe e está completo
+        var modelStatus = await CheckModelStatusAsync(_modelName);
+        
+        if (modelStatus.IsComplete)
+        {
+            Go(Step.ModelAlreadyComplete);
+            return;
+        }
+        
+        if (modelStatus.Exists)
         {
             Go(Step.AskOverwriteImport);
             return;
@@ -366,6 +399,126 @@ public class WizardController : MonoBehaviour
         bodyText?.SetText("Testes concluídos. CSVs atualizados.");
     }
 
+    // ================== VERIFICAÇÃO INTELIGENTE ==================
+
+    /// <summary>
+    /// Verifica o status completo de um modelo
+    /// </summary>
+    private async Task<ModelStatus> CheckModelStatusAsync(string modelName)
+    {
+        var status = new ModelStatus { ModelName = modelName };
+        
+        try
+        {
+            // Verifica se o modelo existe
+            if (!viewer.ModelExists(modelName))
+            {
+                return status; // Exists = false, IsComplete = false
+            }
+            
+            status.Exists = true;
+            
+            // Verifica se o arquivo original é válido
+            string originalPath = Path.Combine(UApp.streamingAssetsPath, "Models", modelName, "original", "model.glb");
+            if (File.Exists(originalPath))
+            {
+                var validation = GltfValidator.QuickValidate(originalPath);
+                if (!validation.IsValid)
+                {
+                    status.OriginalValid = false;
+                    status.Issues.Add($"Arquivo original inválido: {validation.ErrorMessage}");
+                    return status;
+                }
+                status.OriginalValid = true;
+            }
+            else
+            {
+                status.OriginalValid = false;
+                status.Issues.Add("Arquivo original não encontrado");
+                return status;
+            }
+            
+            // Verifica se tem variantes comprimidas
+            var variants = viewer.GetAvailableVariantsPublic(modelName);
+            bool hasDraco = variants.Contains("draco");
+            bool hasMeshopt = variants.Contains("meshopt");
+            
+            status.HasDraco = hasDraco;
+            status.HasMeshopt = hasMeshopt;
+            
+            if (hasDraco)
+            {
+                string dracoPath = Path.Combine(UApp.streamingAssetsPath, "Models", modelName, "draco", "model.glb");
+                if (File.Exists(dracoPath))
+                {
+                    var dracoValidation = GltfValidator.QuickValidate(dracoPath);
+                    if (!dracoValidation.IsValid)
+                    {
+                        status.Issues.Add($"Variante Draco inválida: {dracoValidation.ErrorMessage}");
+                        status.HasDraco = false;
+                    }
+                }
+                else
+                {
+                    status.Issues.Add("Arquivo Draco não encontrado");
+                    status.HasDraco = false;
+                }
+            }
+            
+            if (hasMeshopt)
+            {
+                string meshoptPath = Path.Combine(UApp.streamingAssetsPath, "Models", modelName, "meshopt", "model.glb");
+                if (File.Exists(meshoptPath))
+                {
+                    var meshoptValidation = GltfValidator.QuickValidate(meshoptPath);
+                    if (!meshoptValidation.IsValid)
+                    {
+                        status.Issues.Add($"Variante Meshopt inválida: {meshoptValidation.ErrorMessage}");
+                        status.HasMeshopt = false;
+                    }
+                }
+                else
+                {
+                    status.Issues.Add("Arquivo Meshopt não encontrado");
+                    status.HasMeshopt = false;
+                }
+            }
+            
+            // Determina se está completo
+            status.IsComplete = status.OriginalValid && (status.HasDraco || status.HasMeshopt);
+            
+            if (status.IsComplete)
+            {
+                status.Summary = $"Modelo completo: Original ✅, Draco {(status.HasDraco ? "✅" : "❌")}, Meshopt {(status.HasMeshopt ? "✅" : "❌")}";
+            }
+            else
+            {
+                status.Summary = $"Modelo incompleto: {string.Join(", ", status.Issues)}";
+            }
+            
+        }
+        catch (Exception ex)
+        {
+            status.Issues.Add($"Erro na verificação: {ex.Message}");
+        }
+        
+        return status;
+    }
+
+    /// <summary>
+    /// Status de um modelo
+    /// </summary>
+    private class ModelStatus
+    {
+        public string ModelName { get; set; }
+        public bool Exists { get; set; }
+        public bool OriginalValid { get; set; }
+        public bool HasDraco { get; set; }
+        public bool HasMeshopt { get; set; }
+        public bool IsComplete { get; set; }
+        public List<string> Issues { get; set; } = new List<string>();
+        public string Summary { get; set; }
+    }
 
     static async Task ClearBetweenRunsAsync()
     {

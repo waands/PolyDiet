@@ -268,6 +268,42 @@ namespace PolyDiet.UI.Events
             Debug.Log($"[GameEvents] Long operation {(isStarted ? "started" : "completed")}: {operation}");
         }
         
+        /// <summary>
+        /// Helper para disparar evento de modelo carregado
+        /// </summary>
+        public static void NotifyModelLoaded(string modelName, string variant)
+        {
+            OnModelLoaded?.Invoke(modelName, variant);
+            Debug.Log($"[GameEvents] Model loaded: {modelName} ({variant})");
+        }
+        
+        /// <summary>
+        /// Helper para disparar evento de erro no carregamento de modelo
+        /// </summary>
+        public static void NotifyModelLoadError(string modelName, string variant, string errorMessage)
+        {
+            OnModelLoadError?.Invoke(modelName, variant, errorMessage);
+            Debug.LogError($"[GameEvents] Model load error: {modelName} ({variant}) - {errorMessage}");
+        }
+        
+        /// <summary>
+        /// Helper para disparar evento de modelo descarregado
+        /// </summary>
+        public static void NotifyModelUnloaded()
+        {
+            OnModelUnloaded?.Invoke();
+            Debug.Log($"[GameEvents] Model unloaded");
+        }
+        
+        /// <summary>
+        /// Helper para disparar evento de lista de modelos atualizada
+        /// </summary>
+        public static void NotifyModelsListUpdated(string[] modelNames)
+        {
+            OnModelsListUpdated?.Invoke(modelNames);
+            Debug.Log($"[GameEvents] Models list updated: {modelNames.Length} models");
+        }
+        
         #endregion
         
         #region Event Management

@@ -1100,7 +1100,7 @@ public class ModelViewer : MonoBehaviour
                 ClearSpawn(); 
                 
                 // Notificar erro via eventos
-                GameEvents.OnModelLoadError?.Invoke(modelName, variant, "Falha no parsing do arquivo GLTF");
+                GameEvents.NotifyModelLoadError(modelName, variant, "Falha no parsing do arquivo GLTF");
             }
             else
             {
@@ -1110,7 +1110,7 @@ public class ModelViewer : MonoBehaviour
                 NormalizeModelScale(_currentContainer);
                 
                 // Notificar sucesso via eventos
-                GameEvents.OnModelLoaded?.Invoke(modelName, variant);
+                GameEvents.NotifyModelLoaded(modelName, variant);
             }
             
             return ok;
@@ -1122,7 +1122,7 @@ public class ModelViewer : MonoBehaviour
             ClearSpawn();
             
             // Notificar erro via eventos
-            GameEvents.OnModelLoadError?.Invoke(modelName, variant, ex.Message);
+            GameEvents.NotifyModelLoadError(modelName, variant, ex.Message);
             
             return false;
         }

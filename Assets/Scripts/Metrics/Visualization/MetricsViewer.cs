@@ -305,10 +305,29 @@ public class MetricsViewer : MonoBehaviour
             Debug.LogWarning("Modelo selecionado é inválido. Não é possível gerar relatório.", this.gameObject);
             return;
         }
+        
+        // Verificar se o modelo tem dados de benchmark
+        if (!MetricsPathProvider.HasBenchmarkData(selectedModel))
+        {
+            Debug.LogWarning($"[MetricsViewer] Nenhum benchmark encontrado para o modelo '{selectedModel}'. Execute os testes primeiro.", this.gameObject);
+            return;
+        }
 
         Debug.Log($"[MetricsViewer] Gerando relatório para modelo selecionado: {selectedModel}");
         
+        // Informar localização onde o report será salvo
+        string reportsDir = MetricsPathProvider.GetModelReportsDirectory(selectedModel);
+        Debug.Log($"[MetricsViewer] Report será salvo em: {reportsDir}/<timestamp>/");
+        
         // Chama o método no ReportRunner, passando o modelo selecionado
         reportRunner.RunReportForModel(selectedModel);
+        
+        // Feedback adicional sobre reports anteriores
+        var previousReports = MetricsPathProvider.GetModelReportsList(selectedModel);
+        if (previousReports.Length > 0)
+        {
+            Debug.Log($"[MetricsViewer] Este modelo tem {previousReports.Length} report(s) anterior(es).");
+            Debug.Log($"[MetricsViewer] Report mais recente: {previousReports[0]}");
+        }
     }
 }
