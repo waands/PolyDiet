@@ -977,6 +977,64 @@ public class ModelViewer : MonoBehaviour
     }
 
     // Carrega o modelo sem rodar métricas (o Wizard cuida das métricas)
+    /// <summary>
+    /// Valida se um arquivo GLB/GLTF é válido antes do carregamento
+    /// </summary>
+    /// <param name="filePath">Caminho do arquivo</param>
+    /// <returns>True se válido, false caso contrário</returns>
+    private bool ValidateGltfFile(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                UDebug.LogError($"[ValidateGltfFile] Arquivo não encontrado: {filePath}");
+                return false;
+            }
+
+            // Verificar tamanho do arquivo
+            FileInfo fileInfo = new FileInfo(filePath);
+            if (fileInfo.Length == 0)
+            {
+                UDebug.LogError($"[ValidateGltfFile] Arquivo vazio: {filePath}");
+                return false;
+            }
+
+            // Verificar extensão
+            string extension = Path.GetExtension(filePath).ToLower();
+            if (extension != ".glb" && extension != ".gltf")
+            {
+                UDebug.LogError($"[ValidateGltfFile] Extensão inválida: {extension}");
+                return false;
+            }
+
+            // Para arquivos GLB, verificar se começam com o magic number correto
+            if (extension == ".glb")
+            {
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                {
+                    byte[] header = new byte[4];
+                    fs.Read(header, 0, 4);
+                    
+                    // GLB deve começar com "glTF" (0x46546C67)
+                    if (header[0] != 0x67 || header[1] != 0x6C || header[2] != 0x54 || header[3] != 0x46)
+                    {
+                        UDebug.LogError($"[ValidateGltfFile] Magic number inválido para GLB: {filePath}");
+                        return false;
+                    }
+                }
+            }
+
+            UDebug.Log($"[ValidateGltfFile] ✅ Arquivo válido: {filePath} ({fileInfo.Length} bytes)");
+            return true;
+        }
+        catch (System.Exception ex)
+        {
+            UDebug.LogError($"[ValidateGltfFile] Erro na validação: {ex.Message}");
+            return false;
+        }
+    }
+
     public async Task<bool> LoadOnlyAsync(string modelName, string variant)
     {
         try
@@ -988,6 +1046,13 @@ public class ModelViewer : MonoBehaviour
             if (!System.IO.File.Exists(path))
             {
                 UDebug.LogError($"[LoadOnlyAsync] ❌ Arquivo não encontrado: {path}");
+                return false;
+            }
+
+            // Validar arquivo antes do carregamento
+            if (!ValidateGltfFile(path))
+            {
+                UDebug.LogError($"[LoadOnlyAsync] ❌ Arquivo GLTF inválido: {path}");
                 return false;
             }
 
@@ -1021,11 +1086,23 @@ public class ModelViewer : MonoBehaviour
                 UDebug.LogError($"[LoadOnlyAsync] Stack trace: {ex.StackTrace}");
                 ok = false; 
             }
+            catch (System.Exception ex)
+            {
+                UDebug.LogError($"[LoadOnlyAsync] ❌ Erro inesperado: {ex.Message}");
+                UDebug.LogError($"[LoadOnlyAsync] Stack trace: {ex.StackTrace}");
+                ok = false;
+            }
 
             if (!ok) 
             {
                 UDebug.LogError($"[LoadOnlyAsync] ❌ Limpando spawn devido ao erro");
                 ClearSpawn(); 
+                
+                // Notificar erro via eventos
+                if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
+                {
+                    eventListener.NotifyModelLoadError(modelName, variant, "Falha no parsing do arquivo GLTF");
+                }
             }
             else
             {
@@ -1033,6 +1110,12 @@ public class ModelViewer : MonoBehaviour
                 
                 // Normaliza a escala do modelo se necessário
                 NormalizeModelScale(_currentContainer);
+                
+                // Notificar sucesso via eventos
+                if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
+                {
+                    eventListener.NotifyModelLoaded(modelName, variant);
+                }
             }
             
             return ok;
@@ -1042,6 +1125,13 @@ public class ModelViewer : MonoBehaviour
             UDebug.LogError($"[LoadOnlyAsync] ❌ Erro geral: {ex.Message}");
             UDebug.LogError($"[LoadOnlyAsync] Stack trace: {ex.StackTrace}");
             ClearSpawn();
+            
+            // Notificar erro via eventos
+            if (TryGetComponent<ModelViewerEventListener>(out var eventListener))
+            {
+                eventListener.NotifyModelLoadError(modelName, variant, ex.Message);
+            }
+            
             return false;
         }
     }

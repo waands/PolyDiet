@@ -448,4 +448,29 @@ public class HUDController : MonoBehaviour
     {
         return dropdownModel.options.Count > 0 ? dropdownModel.options[dropdownModel.value].text : null;
     }
+
+    /// <summary>
+    /// Manipula erro de carregamento de modelo
+    /// </summary>
+    public void HandleModelLoadError(string modelName, string variant, string errorMessage)
+    {
+        Debug.Log($"[HUD] Model load error: {modelName} ({variant}) - {errorMessage}");
+        
+        // Mostrar mensagem de erro mais específica para o usuário
+        if (errorMessage.Contains("parsing") || errorMessage.Contains("JSON"))
+        {
+            SetLabel($"❌ Arquivo GLTF corrompido: {modelName} ({variant})");
+        }
+        else if (errorMessage.Contains("não encontrado"))
+        {
+            SetLabel($"❌ Arquivo não encontrado: {modelName} ({variant})");
+        }
+        else
+        {
+            SetLabel($"❌ Erro ao carregar: {modelName} ({variant})");
+        }
+        
+        // Log detalhado para debug
+        Debug.LogError($"[HUD] Model load error: {modelName} ({variant}) - {errorMessage}");
+    }
 }
