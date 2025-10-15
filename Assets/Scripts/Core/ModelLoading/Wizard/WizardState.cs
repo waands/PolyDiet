@@ -130,21 +130,21 @@ namespace PolyDiet.Core.ModelLoading.Wizard
         {
             var report = "=== Wizard State Report ===\n\n";
             report += $"Current Step: {CurrentStep}\n";
-            report += $"Model Name: {ModelName ?? \"Not set\"}\n";
-            report += $"Source Path: {SourcePath ?? \"Not set\"}\n";
+            report += $"Model Name: {ModelName ?? "Not set"}\n";
+            report += $"Source Path: {SourcePath ?? "Not set"}\n";
             report += $"Last Updated: {LastUpdated:yyyy-MM-dd HH:mm:ss}\n\n";
             
             report += "Progress:\n";
-            report += $"  Conversion: {(ConversionDone ? "✅ Done" : "❌ Pending")}\n";
-            report += $"  Compression: {(CompressionDone ? "✅ Done" : "❌ Pending")}\n";
-            report += $"  Metrics: {(MetricsDone ? "✅ Done" : "❌ Pending")}\n\n";
+            report += $"  Conversion: {(ConversionDone ? "Done" : "Pending")}\n";
+            report += $"  Compression: {(CompressionDone ? "Done" : "Pending")}\n";
+            report += $"  Metrics: {(MetricsDone ? "Done" : "Pending")}\n\n";
             
             if (Errors.Count > 0)
             {
                 report += "Errors:\n";
                 foreach (var error in Errors)
                 {
-                    report += $"  ❌ {error}\n";
+                    report += $"  - {error}\n";
                 }
                 report += "\n";
             }
@@ -154,7 +154,7 @@ namespace PolyDiet.Core.ModelLoading.Wizard
                 report += "Warnings:\n";
                 foreach (var warning in Warnings)
                 {
-                    report += $"  ⚠️ {warning}\n";
+                    report += $"  - {warning}\n";
                 }
                 report += "\n";
             }
