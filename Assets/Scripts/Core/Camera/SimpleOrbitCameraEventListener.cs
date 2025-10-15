@@ -63,13 +63,22 @@ namespace PolyDiet.Core.Camera
         {
             if (_camera == null)
             {
-                LogWarning("HandleCameraTargetChanged", "Camera reference is null");
+                LogError("HandleCameraTargetChanged", "Camera reference is null - cannot process target change");
                 return;
             }
             
-            LogDebug("HandleCameraTargetChanged", $"New target: {(newTarget != null ? newTarget.name : "null")}");
+            string targetName = newTarget != null ? newTarget.name : "null";
+            LogDebug("HandleCameraTargetChanged", $"Processing target change: {targetName}");
             
-            _camera.SetTarget(newTarget, _autoFrameOnTargetChange);
+            try
+            {
+                _camera.SetTarget(newTarget, _autoFrameOnTargetChange);
+                LogDebug("HandleCameraTargetChanged", $"Successfully set camera target to: {targetName}");
+            }
+            catch (System.Exception e)
+            {
+                LogError("HandleCameraTargetChanged", $"Failed to set camera target: {e.Message}");
+            }
         }
         
         /// <summary>
@@ -79,21 +88,34 @@ namespace PolyDiet.Core.Camera
         {
             if (_camera == null)
             {
-                LogWarning("HandleCameraResetRequested", "Camera reference is null");
+                LogError("HandleCameraResetRequested", "Camera reference is null - cannot reset camera");
                 return;
             }
             
-            LogDebug("HandleCameraResetRequested", "Resetting camera");
+            LogDebug("HandleCameraResetRequested", "Processing camera reset request");
             
-            if (_resetAnglesOnReset)
+            try
             {
-                _camera.ResetAngles(_defaultYaw, _defaultPitch);
+                if (_resetAnglesOnReset)
+                {
+                    _camera.ResetAngles(_defaultYaw, _defaultPitch);
+                    LogDebug("HandleCameraResetRequested", $"Reset camera angles to: yaw={_defaultYaw}, pitch={_defaultPitch}");
+                }
+                
+                // Frame o target atual se existir
+                if (_camera.target != null)
+                {
+                    _camera.FrameTarget();
+                    LogDebug("HandleCameraResetRequested", $"Framed camera to target: {_camera.target.name}");
+                }
+                else
+                {
+                    LogDebug("HandleCameraResetRequested", "No target to frame - camera reset completed");
+                }
             }
-            
-            // Frame o target atual se existir
-            if (_camera.target != null)
+            catch (System.Exception e)
             {
-                _camera.FrameTarget();
+                LogError("HandleCameraResetRequested", $"Failed to reset camera: {e.Message}");
             }
         }
         
@@ -104,21 +126,23 @@ namespace PolyDiet.Core.Camera
         {
             if (_camera == null)
             {
-                LogWarning("HandleCameraModeChanged", "Camera reference is null");
+                LogError("HandleCameraModeChanged", "Camera reference is null - cannot process mode change");
                 return;
             }
             
-            LogDebug("HandleCameraModeChanged", $"New mode: {mode}");
+            LogDebug("HandleCameraModeChanged", $"Processing camera mode change: {mode}");
             
             // Aqui podemos adicionar lógica específica para diferentes modos
             // Por exemplo, ajustar configurações baseado no modo
             switch (mode.ToLower())
             {
                 case "normal":
+                    LogDebug("HandleCameraModeChanged", "Switching to normal camera mode");
                     // Configurações para modo normal
                     break;
                     
                 case "compare":
+                    LogDebug("HandleCameraModeChanged", "Switching to compare camera mode");
                     // Configurações para modo de comparação
                     // Por exemplo, ajustar FOV ou outras propriedades
                     break;
