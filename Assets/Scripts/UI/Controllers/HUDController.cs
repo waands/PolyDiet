@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using PolyDiet.UI.Controllers;
 
 public class HUDController : MonoBehaviour
 {
@@ -16,6 +17,8 @@ public class HUDController : MonoBehaviour
     public Button buttonQuickLoad;
     public TextMeshProUGUI quickLoadLabel; // opcional: mostra status
     public Button buttonResetCamera;
+    public Button buttonReports; // Botão para abrir painel de relatórios
+    public GameObject reportsPanel; // Referência ao ReportsPanel
     
     // Model Selector removido - agora usa apenas comparePanel com chips
 
@@ -58,6 +61,18 @@ public class HUDController : MonoBehaviour
     {
         // Inicializa o label com o estado atual
         UpdateCurrentModelLabel();
+        
+        // Configurar listener do botão de relatórios
+        if (buttonReports != null)
+        {
+            buttonReports.onClick.AddListener(OnClickReports);
+        }
+        
+        // Garantir que o painel de relatórios inicie desativado
+        if (reportsPanel != null)
+        {
+            reportsPanel.SetActive(false);
+        }
     }
 
     void SetLabel(string s) { if (quickLoadLabel) quickLoadLabel.SetText(s); }
@@ -444,7 +459,7 @@ public class HUDController : MonoBehaviour
     /// Obtém o nome do modelo selecionado no dropdown
     /// </summary>
     /// <returns>Nome do modelo ou null se nenhum selecionado</returns>
-    private string GetSelectedModelName()
+    public string GetSelectedModelName()
     {
         return dropdownModel.options.Count > 0 ? dropdownModel.options[dropdownModel.value].text : null;
     }
@@ -472,5 +487,37 @@ public class HUDController : MonoBehaviour
         
         // Log detalhado para debug
         Debug.LogError($"[HUD] Model load error: {modelName} ({variant}) - {errorMessage}");
+    }
+    
+    /// <summary>
+    /// Callback para o botão de relatórios
+    /// </summary>
+    public void OnClickReports()
+    {
+        if (reportsPanel != null)
+        {
+            bool isActive = reportsPanel.activeSelf;
+            reportsPanel.SetActive(!isActive);
+            
+            if (!isActive)
+            {
+                Debug.Log("[HUD] Abrindo painel de relatórios");
+                
+                // Atualizar UI do painel de relatórios
+                var reportsController = reportsPanel.GetComponent<ReportsPanelController>();
+                if (reportsController != null)
+                {
+                    reportsController.RefreshUI();
+                }
+            }
+            else
+            {
+                Debug.Log("[HUD] Fechando painel de relatórios");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[HUD] ReportsPanel não configurado!");
+        }
     }
 }

@@ -69,6 +69,14 @@ public static class MetricsPathProvider
     }
     
     /// <summary>
+    /// Obtém o diretório de report unificado para um modelo (sem timestamp)
+    /// </summary>
+    public static string GetModelReportUnifiedDirectory(string modelName)
+    {
+        return CrossPlatformHelper.CombinePaths(GetModelReportsDirectory(modelName), "latest");
+    }
+    
+    /// <summary>
     /// Lista todos os reports de um modelo (ordenados por data, mais recente primeiro)
     /// </summary>
     public static string[] GetModelReportsList(string modelName)
@@ -84,12 +92,22 @@ public static class MetricsPathProvider
     }
     
     /// <summary>
-    /// Obtém o caminho do report mais recente de um modelo
+    /// Obtém o caminho do report mais recente de um modelo (agora usa diretório unificado)
     /// </summary>
     public static string GetLatestModelReport(string modelName)
     {
-        var reports = GetModelReportsList(modelName);
-        return reports.Length > 0 ? reports[0] : null;
+        var unifiedDir = GetModelReportUnifiedDirectory(modelName);
+        if (Directory.Exists(unifiedDir))
+        {
+            // Verificar se tem arquivos de report
+            var htmlPath = CrossPlatformHelper.CombinePaths(unifiedDir, "report.html");
+            var jsonPath = CrossPlatformHelper.CombinePaths(unifiedDir, "data.json");
+            if (File.Exists(htmlPath) || File.Exists(jsonPath))
+            {
+                return unifiedDir;
+            }
+        }
+        return null;
     }
     
     /// <summary>

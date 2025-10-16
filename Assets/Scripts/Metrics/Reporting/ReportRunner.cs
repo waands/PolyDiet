@@ -8,6 +8,10 @@ using TMPro; // se for usar statusLabel
 
 public class ReportRunner : MonoBehaviour
 {
+    [Header("Events")]
+    [Tooltip("Evento disparado quando um relatório é gerado com sucesso")]
+    public UnityEngine.Events.UnityEvent<string> OnReportComplete;
+    
     [Header("Paths")]
     [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha.")]
     public string pythonPath = ""; // se vazio, escolhemos automaticamente
@@ -43,6 +47,7 @@ public class ReportRunner : MonoBehaviour
 
     // Sistema de bloqueio para evitar múltiplas execuções simultâneas
     private bool _isGeneratingReport = false;
+    private string _lastReportPath = "";
 
     string CsvPathDefault()
     {
@@ -60,8 +65,8 @@ public class ReportRunner : MonoBehaviour
 
     string OutDirDefault(string model)
     {
-        // Nova lógica: salva dentro da pasta do modelo com timestamp
-        return MetricsPathProvider.GetModelReportTimestampDirectory(model);
+        // Nova lógica: usa diretório unificado (sem timestamp)
+        return MetricsPathProvider.GetModelReportUnifiedDirectory(model);
     }
     
     /// <summary>
@@ -121,6 +126,14 @@ public class ReportRunner : MonoBehaviour
         }
         
         string outDir = string.IsNullOrEmpty(outDirOverride) ? OutDirDefault(model) : outDirOverride;
+        
+        // Limpar diretório existente para garantir relatório unificado
+        if (Directory.Exists(outDir))
+        {
+            Log($"[Report] Limpando diretório existente: {outDir}");
+            Directory.Delete(outDir, true);
+        }
+        
         Directory.CreateDirectory(outDir);
 
         // Lógica de seleção de CSV para modelo específico
@@ -280,6 +293,15 @@ public class ReportRunner : MonoBehaviour
                 }
 
                 _isGeneratingReport = false; // DESBLOQUEIA ao finalizar
+                
+                // Invocar callback se o relatório foi gerado com sucesso
+                if (p.ExitCode == 0)
+                {
+                    _lastReportPath = outDir;
+                    OnReportComplete?.Invoke(outDir);
+                    Log($"[Report] Callback invocado para: {outDir}");
+                }
+                
                 p.Dispose();
             };
             if (!p.Start()) 
@@ -301,5 +323,77 @@ public class ReportRunner : MonoBehaviour
     {
         UnityEngine.Debug.Log(msg);
         if (statusLabel) statusLabel.SetText(msg);
+    }
+    
+    // =====================================================================
+    // MÉTODOS PÚBLICOS PARA INTEGRAÇÃO COM UI
+    // =====================================================================
+    
+    /// <summary>
+    /// Obtém o caminho do último relatório gerado
+    /// </summary>
+    public string GetLastReportPath()
+    {
+        return _lastReportPath;
+    }
+    
+    /// <summary>
+    /// Verifica se está gerando relatório
+    /// </summary>
+    public bool IsGeneratingReport()
+    {
+        return _isGeneratingReport;
+    }
+    
+    /// <summary>
+    /// Abre o HTML do último relatório
+    /// </summary>
+    public void OpenLastHtml()
+    {
+        if (string.IsNullOrEmpty(_lastReportPath))
+            return;
+        
+        string htmlPath = Path.Combine(_lastReportPath, "report.html");
+        if (File.Exists(htmlPath))
+        {
+            Application.OpenURL(htmlPath);
+            Log($"[ReportRunner] Abrindo HTML: {htmlPath}");
+        }
+        else
+        {
+            Log($"<color=orange>[ReportRunner] HTML não encontrado: {htmlPath}</color>");
+        }
+    }
+    
+    /// <summary>
+    /// Abre o PDF do último relatório
+    /// </summary>
+    public void OpenLastPdf()
+    {
+        if (string.IsNullOrEmpty(_lastReportPath))
+            return;
+        
+        string pdfPath = Path.Combine(_lastReportPath, "report.pdf");
+        if (File.Exists(pdfPath))
+        {
+            Application.OpenURL(pdfPath);
+            Log($"[ReportRunner] Abrindo PDF: {pdfPath}");
+        }
+        else
+        {
+            Log($"<color=orange>[ReportRunner] PDF não encontrado: {pdfPath}</color>");
+        }
+    }
+    
+    /// <summary>
+    /// Abre a pasta do último relatório
+    /// </summary>
+    public void OpenLastFolder()
+    {
+        if (string.IsNullOrEmpty(_lastReportPath))
+            return;
+        
+        Application.OpenURL(_lastReportPath);
+        Log($"[ReportRunner] Abrindo pasta: {_lastReportPath}");
     }
 }

@@ -210,7 +210,7 @@ def compare_variants(df, variants, base_variant="original"):
                 "value": variant_value,
                 "diff_abs": diff_abs,
                 "diff_pct": diff_pct,
-                "better": better
+                "better": int(better)  # Convert boolean to int for JSON serialization
             }
     
     return comparisons
@@ -236,7 +236,7 @@ def analyze_temporal_evolution(df):
             
             trends[metric] = {
                 "slope": float(slope),
-                "improving": improving,
+                "improving": int(improving),  # Convert boolean to int for JSON serialization
                 "first_value": float(y[0]),
                 "last_value": float(y[-1]),
                 "total_change": float(y[-1] - y[0])
@@ -1181,12 +1181,122 @@ def main():
         json.dump(json_data, f, indent=2)
     print(f"[py] JSON gerado: {json_path}")
     
+    # PNG Previews (sempre gerar)
+    print("[py] Gerando previews PNG...")
+    images_dir = os.path.join(args.out, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    try:
+        # 1. Tempo de carregamento
+        load_chart = create_bar_chart(df, variants, "load_ms", "Tempo de Carregamento", "ms", color_map)
+        load_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=14),
+            margin=dict(l=50, r=50, t=80, b=50)
+        )
+        load_png_path = os.path.join(images_dir, "bars_load.png")
+        load_chart.write_image(load_png_path, width=1200, height=600, scale=1, engine="kaleido")
+        print(f"[py] PNG: {load_png_path}")
+        
+        # 2. Uso de memória
+        mem_chart = create_bar_chart(df, variants, "mem_mb", "Uso de Memória", "MB", color_map)
+        mem_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=14),
+            margin=dict(l=50, r=50, t=80, b=50)
+        )
+        mem_png_path = os.path.join(images_dir, "bars_mem.png")
+        mem_chart.write_image(mem_png_path, width=1200, height=600, scale=1, engine="kaleido")
+        print(f"[py] PNG: {mem_png_path}")
+        
+        # 3. FPS médio
+        fps_chart = create_bar_chart(df, variants, "fps_avg", "Performance FPS", "FPS", color_map)
+        fps_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=14),
+            margin=dict(l=50, r=50, t=80, b=50)
+        )
+        fps_png_path = os.path.join(images_dir, "bars_fps.png")
+        fps_chart.write_image(fps_png_path, width=1200, height=600, scale=1, engine="kaleido")
+        print(f"[py] PNG: {fps_png_path}")
+        
+        print("[py] ✓ Previews PNG gerados com sucesso!")
+        
+    except Exception as e:
+        print(f"[py] ⚠️ Erro ao gerar PNGs: {e}")
+        print("[py] ⚠️ Continuando sem previews PNG...")
+    
     # PDF (se solicitado)
     if args.pdf:
         pdf_path = os.path.join(args.out, "report.pdf")
         print(f"[py] Gerando PDF: {pdf_path}")
-        # TODO: Implementar geração de PDF
-        print(f"[py] ⚠️ Geração de PDF não implementada ainda")
+        
+        try:
+            # Criar figura combinada com todos os gráficos principais
+            from plotly.subplots import make_subplots
+            
+            # Criar subplots 2x2
+            fig_combined = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=("Tempo de Carregamento", "Uso de Memória", "Performance FPS", "Tamanho dos Arquivos"),
+                specs=[[{"type": "bar"}, {"type": "bar"}],
+                       [{"type": "bar"}, {"type": "bar"}]]
+            )
+            
+            # Adicionar gráficos de barras
+            for i, metric in enumerate(["load_ms", "mem_mb", "fps_avg"]):
+                row = (i // 2) + 1
+                col = (i % 2) + 1
+                
+                for variant in variants:
+                    variant_data = df[df['variant'] == variant]
+                    if len(variant_data) > 0:
+                        fig_combined.add_trace(
+                            go.Bar(
+                                x=[variant],
+                                y=[variant_data[metric].mean()],
+                                name=f"{variant} ({metric})",
+                                marker_color=color_map.get(variant, "#666666"),
+                                showlegend=False
+                            ),
+                            row=row, col=col
+                        )
+            
+            # Adicionar gráfico de tamanho de arquivos
+            if file_infos:
+                sizes = [fi.size_mb for fi in file_infos]
+                names = [fi.variant for fi in file_infos]
+                colors = [color_map.get(fi.variant, "#666666") for fi in file_infos]
+                
+                fig_combined.add_trace(
+                    go.Bar(
+                        x=names,
+                        y=sizes,
+                        name="Tamanho dos Arquivos",
+                        marker_color=colors,
+                        showlegend=False
+                    ),
+                    row=2, col=2
+                )
+            
+            # Configurar layout
+            fig_combined.update_layout(
+                title=f"Relatório de Performance - {args.model}",
+                height=800,
+                showlegend=False,
+                template='plotly_white'
+            )
+            
+            # Gerar PDF
+            fig_combined.write_image(pdf_path, width=1200, height=800, scale=2)
+            print(f"[py] ✓ PDF gerado: {pdf_path}")
+            
+        except Exception as e:
+            print(f"[py] ⚠️ Erro ao gerar PDF: {e}")
+            print(f"[py] ⚠️ Continuando sem PDF...")
     
     print("[py] ✓ Report gerado com sucesso!")
     return 0
