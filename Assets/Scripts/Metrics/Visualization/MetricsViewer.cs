@@ -307,15 +307,7 @@ public class MetricsViewer : MonoBehaviour
         }
         
         // Verificar se o modelo tem dados de benchmark
-        string csvPath = MetricsPathProvider.GetCsvPath(selectedModel);
-        bool hasData = MetricsPathProvider.HasBenchmarkData(selectedModel);
-        
-        Debug.Log($"[MetricsViewer] Verificando benchmark para '{selectedModel}':");
-        Debug.Log($"[MetricsViewer] CSV Path: {csvPath}");
-        Debug.Log($"[MetricsViewer] File exists: {System.IO.File.Exists(csvPath)}");
-        Debug.Log($"[MetricsViewer] HasBenchmarkData: {hasData}");
-        
-        if (!hasData)
+        if (!MetricsPathProvider.HasBenchmarkData(selectedModel))
         {
             Debug.LogWarning($"[MetricsViewer] Nenhum benchmark encontrado para o modelo '{selectedModel}'. Execute os testes primeiro.", this.gameObject);
             return;

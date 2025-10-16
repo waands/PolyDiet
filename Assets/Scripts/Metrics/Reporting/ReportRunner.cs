@@ -225,11 +225,20 @@ public class ReportRunner : MonoBehaviour
 
     string AutoPython()
     {
-#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        // Primeiro, tenta usar o ambiente virtual se existir
+        string venvPath = Path.Combine(Application.dataPath, "..", "reports_env", "bin", "python");
+        if (File.Exists(venvPath))
+        {
+            Log($"[Report] Usando ambiente virtual: {venvPath}");
+            return venvPath;
+        }
+        
+        // Fallback para Python do sistema
         if (!string.IsNullOrEmpty(pythonPath)) return pythonPath;
+        
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         return "py"; // tenta o launcher do Windows; se não, troque para "python"
 #else
-        if (!string.IsNullOrEmpty(pythonPath)) return pythonPath;
         return "python3";
 #endif
     }

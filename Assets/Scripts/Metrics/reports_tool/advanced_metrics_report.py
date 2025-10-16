@@ -344,8 +344,8 @@ def create_bar_chart(df, variants, metric, title, unit, color_map):
     
     fig.update_layout(
         title=dict(text=title, font=dict(size=16, color='#2c3e50')),
-        xaxis=dict(title="Variante", titlefont=dict(size=14)),
-        yaxis=dict(title=unit, titlefont=dict(size=14)),
+        xaxis=dict(title=dict(text="Variante", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -378,7 +378,7 @@ def create_box_plots(df, variants, metric, title, unit, color_map):
     
     fig.update_layout(
         title=dict(text=title, font=dict(size=16, color='#2c3e50')),
-        yaxis=dict(title=unit, titlefont=dict(size=14)),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -417,8 +417,8 @@ def create_scatter_plot(df, variants, x_metric, y_metric, title, color_map):
     
     fig.update_layout(
         title=dict(text=title, font=dict(size=16, color='#2c3e50')),
-        xaxis=dict(title=x_metric.replace('_', ' ').title(), titlefont=dict(size=14)),
-        yaxis=dict(title=y_metric.replace('_', ' ').title(), titlefont=dict(size=14)),
+        xaxis=dict(title=dict(text=x_metric.replace('_', ' ').title(), font=dict(size=14))),
+        yaxis=dict(title=dict(text=y_metric.replace('_', ' ').title(), font=dict(size=14))),
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -482,8 +482,8 @@ def create_timeline_chart(df, variants, metric, title, unit, color_map):
     
     fig.update_layout(
         title=dict(text=title, font=dict(size=16, color='#2c3e50')),
-        xaxis=dict(title="Timestamp", titlefont=dict(size=14)),
-        yaxis=dict(title=unit, titlefont=dict(size=14)),
+        xaxis=dict(title=dict(text="Timestamp", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -515,8 +515,8 @@ def create_file_size_chart(file_infos, color_map):
     
     fig.update_layout(
         title=dict(text="Tamanho dos Arquivos por Variante", font=dict(size=16, color='#2c3e50')),
-        xaxis=dict(title="Variante", titlefont=dict(size=14)),
-        yaxis=dict(title="Tamanho (MB)", titlefont=dict(size=14)),
+        xaxis=dict(title=dict(text="Variante", font=dict(size=14))),
+        yaxis=dict(title=dict(text="Tamanho (MB)", font=dict(size=14))),
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',

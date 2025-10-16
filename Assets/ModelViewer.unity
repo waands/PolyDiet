@@ -14351,6 +14351,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ReportRunner
   pythonPath: /home/wands/Documentos/tcc/PolyDiet/reports_tool/.venv/bin/python
+  useAdvancedScript: 1
   scriptPath: /home/wands/Documentos/tcc/PolyDiet/Assets/Scripts/Metrics/reports_tool/metrics_report.py
   packagedExePath: 
   csvPathOverride: /home/wands/Documentos/tcc/PolyDiet/Benchmarks/benchmarks.csv
