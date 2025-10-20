@@ -30,6 +30,14 @@ namespace PolyDiet.UI.Controllers
         [Tooltip("RawImage para preview de FPS")]
         public RawImage previewFps;
         
+        [Header("ScrollView")]
+        [Tooltip("ScrollView para mostrar todas as imagens")]
+        public ScrollRect scrollView;
+        [Tooltip("Content do ScrollView")]
+        public RectTransform scrollContent;
+        [Tooltip("Prefab para item de imagem (opcional)")]
+        public GameObject imageItemPrefab;
+        
         [Header("Botões")]
         [Tooltip("Botão para gerar relatório")]
         public Button buttonGenerate;
@@ -65,6 +73,45 @@ namespace PolyDiet.UI.Controllers
             SetupDropdown();
             RefreshModelList();
             UpdateUI();
+
+            // Diagnostic: log button/dropdown state after initialization
+            StartCoroutine(LogButtonState());
+
+            // TEMPORÁRIO: Forçar habilitação do botão Gerar se houver modelos válidos no dropdown
+            if (buttonGenerate != null && dropdownModel != null)
+            {
+                if (dropdownModel.options != null && dropdownModel.options.Count > 0)
+                {
+                    var firstOption = dropdownModel.options[0].text;
+                    if (!string.IsNullOrEmpty(firstOption) && !firstOption.StartsWith("("))
+                    {
+                        buttonGenerate.interactable = true;
+                        Debug.Log("[ReportsPanel] EMERGÊNCIA: Forçando buttonGenerate.interactable = true (opções no dropdown)");
+                    }
+                }
+            }
+        }
+
+        private IEnumerator LogButtonState()
+        {
+            // Wait a short time for any async initialization
+            yield return new WaitForSeconds(0.5f);
+
+            Debug.Log("[ReportsPanel] DIAGNÓSTICO: Estado iniciais do painel de reports");
+            Debug.Log($"[ReportsPanel] _currentModel: '{_currentModel}'");
+            Debug.Log($"[ReportsPanel] _isGeneratingReport: {_isGeneratingReport}");
+            if (dropdownModel != null)
+            {
+                Debug.Log($"[ReportsPanel] dropdownModel.options.Count: {dropdownModel.options.Count}");
+                for (int i = 0; i < dropdownModel.options.Count; i++)
+                {
+                    Debug.Log($"[ReportsPanel] Option[{i}]: '{dropdownModel.options[i].text}'");
+                }
+            }
+            if (buttonGenerate != null)
+            {
+                Debug.Log($"[ReportsPanel] buttonGenerate.interactable: {buttonGenerate.interactable}");
+            }
         }
         
         void OnEnable()
@@ -150,6 +197,18 @@ namespace PolyDiet.UI.Controllers
             else
             {
                 dropdownModel.AddOptions(modelsWithData);
+
+                // Selecionar automaticamente o primeiro modelo disponível
+                try
+                {
+                    dropdownModel.value = 0;
+                    // Atualiza _currentModel e a UI
+                    OnModelSelectionChanged(0);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[ReportsPanel] Erro ao selecionar modelo padrão: {ex}");
+                }
             }
             
             Debug.Log($"[ReportsPanel] Lista de modelos atualizada: {modelsWithData.Count} modelos com dados");
@@ -245,7 +304,7 @@ namespace PolyDiet.UI.Controllers
             if (!string.IsNullOrEmpty(latestReport))
             {
                 _lastReportPath = latestReport;
-                SetStatus($"Modelo '{_currentModel}' - Relatório disponível");
+                SetStatus($"Modelo '{_currentModel}' - Relatório disponível (clique 'Gerar' para atualizar)");
                 SetButtonsEnabled(true);
                 LoadPreviews();
             }
@@ -415,6 +474,9 @@ namespace PolyDiet.UI.Controllers
             
             // Carregar preview de FPS
             LoadPngPreview(previewFps, Path.Combine(imagesDir, "bars_fps.png"));
+            
+            // Carregar todas as imagens no ScrollView
+            LoadAllImages();
         }
         
         /// <summary>
@@ -448,6 +510,9 @@ namespace PolyDiet.UI.Controllers
             if (previewLoad != null) previewLoad.texture = null;
             if (previewMem != null) previewMem.texture = null;
             if (previewFps != null) previewFps.texture = null;
+            
+            // Limpar ScrollView também
+            ClearScrollView();
         }
         
         /// <summary>
@@ -526,5 +591,214 @@ namespace PolyDiet.UI.Controllers
         {
             return _isGeneratingReport;
         }
+        
+        #region ScrollView Methods
+        
+        /// <summary>
+        /// Carrega todas as 8 imagens no ScrollView
+        /// </summary>
+        private void LoadAllImages()
+        {
+            if (scrollContent == null || string.IsNullOrEmpty(_lastReportPath))
+                return;
+            
+            ClearScrollView();
+            
+            string imagesDir = Path.Combine(_lastReportPath, "images");
+            if (!Directory.Exists(imagesDir))
+                return;
+            
+            // Lista das 8 imagens (título, arquivo)
+            string[] imageTitles = new[]
+            {
+                "Tempo de Carregamento",
+                "Uso de Memória",
+                "FPS Médio",
+                "FPS Mínimo",
+                "FPS Máximo",
+                "FPS Mediano",
+                "FPS 1% Low",
+                "Tamanho do Arquivo"
+            };
+            
+            string[] imageFilenames = new[]
+            {
+                "bars_load.png",
+                "bars_mem.png",
+                "bars_fps.png",
+                "bars_fps_min.png",
+                "bars_fps_max.png",
+                "bars_fps_median.png",
+                "bars_fps_1pc.png",
+                "bars_file_size.png"
+            };
+            
+            for (int i = 0; i < imageTitles.Length; i++)
+            {
+                string imagePath = Path.Combine(imagesDir, imageFilenames[i]);
+                if (File.Exists(imagePath))
+                {
+                    CreateImageItem(imageTitles[i], imagePath);
+                }
+            }
+            
+            UpdateScrollContentSize();
+        }
+        
+        /// <summary>
+        /// Cria um item de imagem no ScrollView
+        /// </summary>
+        private void CreateImageItem(string title, string imagePath)
+        {
+            GameObject item;
+            
+            if (imageItemPrefab != null)
+            {
+                // Usar prefab se fornecido
+                item = Instantiate(imageItemPrefab, scrollContent);
+            }
+            else
+            {
+                // Criar manualmente se não houver prefab
+                item = CreateImageItemManually(title, imagePath);
+            }
+            
+            if (item == null)
+                return;
+            
+            // Configurar componentes do item
+            TextMeshProUGUI titleText = item.GetComponentInChildren<TextMeshProUGUI>();
+            if (titleText != null)
+            {
+                titleText.text = title;
+                titleText.fontSize = 20;
+                titleText.alignment = TextAlignmentOptions.Center;
+            }
+            
+            RawImage image = item.GetComponentInChildren<RawImage>();
+            if (image != null)
+            {
+                Texture2D texture = LoadPngTexture(imagePath);
+                if (texture != null)
+                {
+                    image.texture = texture;
+                    
+                    // Configurar AspectRatioFitter
+                    AspectRatioFitter fitter = image.GetComponent<AspectRatioFitter>();
+                    if (fitter == null)
+                        fitter = image.gameObject.AddComponent<AspectRatioFitter>();
+                    
+                    fitter.aspectMode = AspectRatioFitter.AspectMode.WidthControlsHeight;
+                    fitter.aspectRatio = (float)texture.width / texture.height;
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Cria um item de imagem manualmente (sem prefab)
+        /// </summary>
+        private GameObject CreateImageItemManually(string title, string imagePath)
+        {
+            // Container principal
+            GameObject item = new GameObject($"ImageItem_{title}");
+            item.transform.SetParent(scrollContent, false);
+            
+            RectTransform itemRect = item.AddComponent<RectTransform>();
+            itemRect.sizeDelta = new Vector2(840, 700); // Largura fixa, altura base
+            
+            VerticalLayoutGroup vlg = item.AddComponent<VerticalLayoutGroup>();
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlHeight = false;
+            vlg.childControlWidth = false;
+            vlg.childForceExpandHeight = false;
+            vlg.childForceExpandWidth = true;
+            vlg.spacing = 5;
+            
+            // Título
+            GameObject titleObj = new GameObject("Title");
+            titleObj.transform.SetParent(item.transform, false);
+            
+            RectTransform titleRect = titleObj.AddComponent<RectTransform>();
+            titleRect.sizeDelta = new Vector2(840, 30);
+            
+            TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
+            titleText.text = title;
+            titleText.fontSize = 20;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.color = Color.white;
+            
+            // Imagem
+            GameObject imageObj = new GameObject("Image");
+            imageObj.transform.SetParent(item.transform, false);
+            
+            RectTransform imageRect = imageObj.AddComponent<RectTransform>();
+            imageRect.sizeDelta = new Vector2(840, 650);
+            
+            RawImage rawImage = imageObj.AddComponent<RawImage>();
+            AspectRatioFitter fitter = imageObj.AddComponent<AspectRatioFitter>();
+            fitter.aspectMode = AspectRatioFitter.AspectMode.WidthControlsHeight;
+            
+            return item;
+        }
+        
+        /// <summary>
+        /// Limpa o conteúdo do ScrollView
+        /// </summary>
+        private void ClearScrollView()
+        {
+            if (scrollContent == null)
+                return;
+            
+            foreach (Transform child in scrollContent)
+            {
+                Destroy(child.gameObject);
+            }
+        }
+        
+        /// <summary>
+        /// Atualiza o tamanho do Content baseado nos aspect ratios
+        /// </summary>
+        private void UpdateScrollContentSize()
+        {
+            if (scrollContent == null)
+                return;
+            
+            float totalHeight = 0;
+            
+            foreach (Transform child in scrollContent)
+            {
+                RectTransform childRect = child as RectTransform;
+                if (childRect != null)
+                {
+                    totalHeight += childRect.sizeDelta.y + 8; // 8 é o spacing
+                }
+            }
+            
+            scrollContent.sizeDelta = new Vector2(scrollContent.sizeDelta.x, totalHeight);
+        }
+        
+        /// <summary>
+        /// Carrega um PNG em uma Texture2D
+        /// </summary>
+        private Texture2D LoadPngTexture(string filePath)
+        {
+            if (!File.Exists(filePath))
+                return null;
+            
+            try
+            {
+                byte[] pngData = File.ReadAllBytes(filePath);
+                Texture2D texture = new Texture2D(2, 2);
+                texture.LoadImage(pngData);
+                return texture;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ReportsPanel] Erro ao carregar textura {filePath}: {ex.Message}");
+                return null;
+            }
+        }
+        
+        #endregion
     }
 }

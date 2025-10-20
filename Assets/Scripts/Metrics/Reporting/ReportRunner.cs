@@ -15,10 +15,8 @@ public class ReportRunner : MonoBehaviour
     [Header("Paths")]
     [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha.")]
     public string pythonPath = ""; // se vazio, escolhemos automaticamente
-    [Tooltip("Usar script avançado com análises complexas (recomendado)")]
-    public bool useAdvancedScript = true;
-    [Tooltip("Caminho para o metrics_report.py (LEGACY)")]
-    public string scriptPath = ""; // ex.: Application.dataPath + "/../reports_tool/metrics_report.py"
+    [Tooltip("Caminho para o simple_report_generator.py")]
+    public string scriptPath = ""; // ex.: Application.dataPath + "/Scripts/Metrics/reports_tool/simple_report_generator.py"
     [Tooltip("Opcional: binário empacotado (PyInstaller). Se preenchido, ignora pythonPath/scriptPath.")]
     public string packagedExePath = ""; // ex.: Application.dataPath + "/../reports_tool/dist/metrics_report.exe"
 
@@ -69,26 +67,6 @@ public class ReportRunner : MonoBehaviour
         return MetricsPathProvider.GetModelReportUnifiedDirectory(model);
     }
     
-    /// <summary>
-    /// Coleta informações de arquivos GLB do modelo
-    /// </summary>
-    string[] CollectFileInfo(string modelName)
-    {
-        var info = new List<string>();
-        var modelDir = MetricsPathProvider.GetModelDirectory(modelName);
-        
-        foreach (var variant in new[] { "original", "draco", "meshopt" })
-        {
-            var glbPath = Path.Combine(modelDir, variant, "model.glb");
-            if (File.Exists(glbPath))
-            {
-                var fileInfo = new FileInfo(glbPath);
-                info.Add($"{variant}:{fileInfo.Length}:{glbPath}");
-            }
-        }
-        
-        return info.ToArray();
-    }
 
     /// <summary>
     /// Inicia a geração de um relatório para um modelo específico,
@@ -174,44 +152,31 @@ public class ReportRunner : MonoBehaviour
             Log($"  - {path}");
         }
 
-        // NOVO: Coletar informações de arquivos
-        string[] fileInfo = CollectFileInfo(model);
-        string fileInfoArgs = fileInfo.Length > 0 
-            ? " " + string.Join(" ", fileInfo.Select(f => $"--file-info \"{f}\""))
-            : "";
-        
-        Log($"[Report] Coletadas {fileInfo.Length} informações de arquivos");
-        
-        // Construir lista de variantes
-        string variants = $"{MetricsConfig.BASE_VARIANT},{MetricsConfig.DRACO_VARIANT},{MetricsConfig.MESHOPT_VARIANT}";
-
         // Juntar todos os caminhos em uma única string, separados por espaço
         string allCsvPaths = string.Join(" ", csvPaths.Select(p => $"\"{p}\""));
 
-        // Escolher script
+        // Escolher script (novo sistema simples)
         string actualScriptPath = scriptPath;
-        if (useAdvancedScript)
+        if (string.IsNullOrEmpty(actualScriptPath))
         {
-            // Usa script avançado por padrão
-            string advancedScriptPath = Path.Combine(Application.dataPath, "Scripts", "Metrics", "reports_tool", "advanced_metrics_report.py");
-            if (File.Exists(advancedScriptPath))
-            {
-                actualScriptPath = advancedScriptPath;
-                Log($"[Report] Usando script avançado: {actualScriptPath}");
-            }
-            else
-            {
-                Log($"<color=orange>[Report] Script avançado não encontrado em: {advancedScriptPath}. Usando script padrão.</color>");
-            }
+            // Usa script simples por padrão
+            actualScriptPath = Path.Combine(Application.dataPath, "Scripts", "Metrics", "reports_tool", "simple_report_generator.py");
         }
         
-        // Construir os argumentos para execução
-        string args = $"\"{actualScriptPath}\" --out \"{outDir}\" --model {model} --variants {variants} --last-n {lastN} --csv-files {allCsvPaths}{fileInfoArgs}";
+        if (!File.Exists(actualScriptPath))
+        {
+            Log($"<color=red>[Report] Script não encontrado em: {actualScriptPath}</color>");
+            _isGeneratingReport = false;
+            return;
+        }
         
-            if (genHtml) args += " --html";
-            if (genPdf)  args += " --pdf";
-            if (!string.IsNullOrEmpty(pdfEngine)) args += $" --pdf-engine {pdfEngine}";
-            if (!string.IsNullOrEmpty(pdfEnginePath)) args += $" --pdf-engine-path \"{pdfEnginePath}\"";
+        Log($"[Report] Usando script: {actualScriptPath}");
+        
+        // Construir os argumentos para execução (novo formato simplificado)
+        string args = $"\"{actualScriptPath}\" --out \"{outDir}\" --model {model} --csv-files {allCsvPaths}";
+        
+        if (genHtml) args += " --html";
+        if (genPdf)  args += " --pdf";
 
         string file;
         string finalArgs;

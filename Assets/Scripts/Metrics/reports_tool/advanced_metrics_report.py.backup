@@ -1,0 +1,1988 @@
+#!/usr/bin/env python3
+"""
+Advanced Metrics Report Generator - Sistema Avançado de Reports
+
+Este script gera relatórios HTML interativos e PDF com análises avançadas de métricas de performance.
+
+Funcionalidades:
+- Comparação detalhada entre variantes (original, draco, meshopt)
+- Estatísticas avançadas (média, mediana, desvio padrão, percentis)
+- Detecção de outliers
+- Análise de evolução temporal
+- Visualizações avançadas (heatmaps, box plots, scatter plots)
+- Informações técnicas de arquivos GLB
+- Exportação de dados em JSON
+"""
+
+import argparse
+import os
+import sys
+import json
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+# Configurações centralizadas
+CONFIG = {
+    "base_variant": "original",
+    "draco_variant": "draco",
+    "meshopt_variant": "meshopt",
+    "default_last_n": 20,
+    "default_pdf_engine": "chrome",
+    "outlier_threshold": 2.0,  # Z-score para detecção de outliers
+}
+
+# Verificar dependências
+try:
+    import pandas as pd
+    import numpy as np
+    print("[py] ✓ pandas e numpy carregados")
+except ImportError as e:
+    print(f"[py] ❌ Erro ao carregar pandas/numpy: {e}")
+    print("[py] Instale com: pip install pandas numpy")
+    sys.exit(1)
+
+try:
+    import plotly.graph_objs as go
+    import plotly.io as pio
+    from plotly.subplots import make_subplots
+    print("[py] ✓ plotly carregado")
+except ImportError as e:
+    print(f"[py] ❌ Erro ao carregar plotly: {e}")
+    print("[py] Instale com: pip install plotly")
+    sys.exit(1)
+
+
+# =====================================================================
+# ESTRUTURAS DE DADOS
+# =====================================================================
+
+class FileInfo:
+    """Informações de um arquivo de modelo"""
+    def __init__(self, variant, size_bytes, path):
+        self.variant = variant
+        self.size_bytes = size_bytes
+        self.size_mb = size_bytes / (1024 * 1024)
+        self.path = path
+        self.gltf_info = None  # Será preenchido pelo gltf_inspector
+    
+    def to_dict(self):
+        return {
+            "variant": self.variant,
+            "size_bytes": self.size_bytes,
+            "size_mb": self.size_mb,
+            "path": self.path,
+            "gltf_info": self.gltf_info
+        }
+
+
+class VariantStats:
+    """Estatísticas avançadas para uma variante"""
+    def __init__(self, data):
+        if len(data) == 0:
+            self.mean = self.median = self.std = self.min = self.max = 0
+            self.q25 = self.q75 = self.p1 = self.p99 = 0
+            self.count = 0
+        else:
+            self.mean = float(data.mean())
+            self.median = float(data.median())
+            self.std = float(data.std()) if len(data) > 1 else 0
+            self.min = float(data.min())
+            self.max = float(data.max())
+            self.q25 = float(data.quantile(0.25))
+            self.q75 = float(data.quantile(0.75))
+            self.p1 = float(data.quantile(0.01))
+            self.p99 = float(data.quantile(0.99))
+            self.count = len(data)
+    
+    def to_dict(self):
+        return {
+            "mean": self.mean,
+            "median": self.median,
+            "std": self.std,
+            "min": self.min,
+            "max": self.max,
+            "q25": self.q25,
+            "q75": self.q75,
+            "p1": self.p1,
+            "p99": self.p99,
+            "count": self.count
+        }
+
+
+# =====================================================================
+# PARSING DE ARGUMENTOS
+# =====================================================================
+
+def parse_args():
+    ap = argparse.ArgumentParser(description="Advanced Metrics Report Generator")
+    ap.add_argument("--csv-files", nargs='+', required=True, help="Lista de caminhos para os arquivos CSV")
+    ap.add_argument("--out", required=True, help="Diretório de saída")
+    ap.add_argument("--model", required=True, help="Nome do modelo")
+    ap.add_argument("--variants", default=f"{CONFIG['base_variant']},{CONFIG['draco_variant']},{CONFIG['meshopt_variant']}")
+    ap.add_argument("--last-n", type=int, default=CONFIG["default_last_n"])
+    ap.add_argument("--html", action="store_true", help="Gerar HTML")
+    ap.add_argument("--pdf", action="store_true", help="Gerar PDF")
+    ap.add_argument("--pdf-engine", default=CONFIG["default_pdf_engine"])
+    ap.add_argument("--pdf-engine-path", default="")
+    ap.add_argument("--file-info", action="append", default=[], help="Informações de arquivos (variant:size:path)")
+    return ap.parse_args()
+
+
+# =====================================================================
+# CARREGAMENTO E PROCESSAMENTO DE DADOS
+# =====================================================================
+
+def load_multiple_csvs(csv_paths):
+    """Carrega e combina múltiplos CSVs"""
+    dfs = []
+    for path in csv_paths:
+        try:
+            df = pd.read_csv(path)
+            dfs.append(df)
+            print(f"[py] CSV carregado: {path} ({len(df)} linhas)")
+        except Exception as e:
+            print(f"[py] ⚠️ Erro ao carregar {path}: {e}")
+    
+    if not dfs:
+        raise ValueError("Nenhum CSV foi carregado com sucesso")
+    
+    combined_df = pd.concat(dfs, ignore_index=True)
+    print(f"[py] Total de linhas combinadas: {len(combined_df)}")
+    return combined_df
+
+
+def parse_file_info(file_info_list):
+    """Parseia informações de arquivos do formato variant:size:path"""
+    file_infos = []
+    for info_str in file_info_list:
+        try:
+            parts = info_str.split(':', 2)
+            if len(parts) == 3:
+                variant, size_str, path = parts
+                file_info = FileInfo(variant, int(size_str), path)
+                file_infos.append(file_info)
+                print(f"[py] File info: {variant} = {file_info.size_mb:.2f} MB")
+        except Exception as e:
+            print(f"[py] ⚠️ Erro ao parsear file-info '{info_str}': {e}")
+    
+    return file_infos
+
+
+# =====================================================================
+# ANÁLISES COMPLEXAS
+# =====================================================================
+
+def compare_variants(df, variants, base_variant="original"):
+    """Compara variantes e calcula ganhos/perdas percentuais"""
+    comparisons = {}
+    metrics = ["load_ms", "mem_mb", "fps_avg"]
+    
+    # Calcula médias para a variante base
+    base_data = df[df['variant'] == base_variant]
+    if len(base_data) == 0:
+        print(f"[py] ⚠️ Variante base '{base_variant}' não encontrada")
+        return comparisons
+    
+    for metric in metrics:
+        base_value = base_data[metric].mean()
+        
+        for variant in variants:
+            if variant == base_variant:
+                continue
+            
+            variant_data = df[df['variant'] == variant]
+            if len(variant_data) == 0:
+                continue
+            
+            variant_value = variant_data[metric].mean()
+            diff_abs = variant_value - base_value
+            diff_pct = (diff_abs / base_value) * 100 if base_value != 0 else 0
+            
+            # Para load_ms e mem_mb, menor é melhor (negative diff é better)
+            # Para fps_avg, maior é melhor (positive diff é better)
+            better = diff_pct < 0 if metric in ["load_ms", "mem_mb"] else diff_pct > 0
+            
+            comparisons[f"{variant}_{metric}"] = {
+                "variant": variant,
+                "metric": metric,
+                "base": base_value,
+                "value": variant_value,
+                "diff_abs": diff_abs,
+                "diff_pct": diff_pct,
+                "better": int(better)  # Convert boolean to int for JSON serialization
+            }
+    
+    return comparisons
+
+
+def analyze_temporal_evolution(df):
+    """Analisa como as métricas evoluíram ao longo dos testes"""
+    df_sorted = df.sort_values('timestamp').copy()
+    trends = {}
+    
+    for metric in ["fps_avg", "load_ms", "mem_mb"]:
+        if len(df_sorted) > 1:
+            x = np.arange(len(df_sorted))
+            y = df_sorted[metric].values
+            
+            # Calcula tendência linear
+            coeffs = np.polyfit(x, y, 1)
+            slope = coeffs[0]
+            
+            # Para load_ms e mem_mb, slope negativo é improving
+            # Para fps_avg, slope positivo é improving
+            improving = slope < 0 if metric in ["load_ms", "mem_mb"] else slope > 0
+            
+            trends[metric] = {
+                "slope": float(slope),
+                "improving": int(improving),  # Convert boolean to int for JSON serialization
+                "first_value": float(y[0]),
+                "last_value": float(y[-1]),
+                "total_change": float(y[-1] - y[0])
+            }
+    
+    return trends
+
+
+def detect_outliers(df, metric, threshold=2.0):
+    """Detecta outliers usando z-score"""
+    if len(df) < 3:
+        return pd.DataFrame()
+    
+    mean = df[metric].mean()
+    std = df[metric].std()
+    
+    if std == 0:
+        return pd.DataFrame()
+    
+    z_scores = (df[metric] - mean) / std
+    outliers = df[abs(z_scores) > threshold].copy()
+    outliers['z_score'] = z_scores[outliers.index]
+    
+    return outliers
+
+
+def calculate_compression_ratios(file_infos):
+    """Calcula taxas de compressão entre variantes"""
+    original_file = next((f for f in file_infos if f.variant == "original"), None)
+    
+    if not original_file:
+        return {}
+    
+    original_size = original_file.size_bytes
+    ratios = {}
+    
+    for file_info in file_infos:
+        if file_info.variant != "original":
+            compression_pct = (1 - file_info.size_bytes / original_size) * 100
+            size_reduction_mb = (original_size - file_info.size_bytes) / (1024 * 1024)
+            
+            ratios[file_info.variant] = {
+                "size_mb": file_info.size_mb,
+                "compression_pct": compression_pct,
+                "size_reduction_mb": size_reduction_mb
+            }
+    
+    return ratios
+
+
+def calculate_all_stats(df, variants):
+    """Calcula estatísticas para todas as variantes e métricas"""
+    all_stats = {}
+    metrics = ["load_ms", "mem_mb", "fps_avg", "fps_min", "fps_max", "fps_median"]
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        if len(variant_data) == 0:
+            continue
+        
+        all_stats[variant] = {}
+        for metric in metrics:
+            if metric in variant_data.columns:
+                all_stats[variant][metric] = VariantStats(variant_data[metric])
+    
+    return all_stats
+
+
+# =====================================================================
+# VISUALIZAÇÕES
+# =====================================================================
+
+def create_bar_chart(df, variants, metric, title, unit, color_map):
+    """Cria gráfico de barras comparativo melhorado"""
+    values = []
+    colors = []
+    errors = []
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        if len(variant_data) > 0:
+            mean_val = variant_data[metric].mean()
+            std_val = variant_data[metric].std()
+            values.append(mean_val)
+            errors.append(std_val)
+            colors.append(color_map.get(variant, '#999'))
+        else:
+            values.append(0)
+            errors.append(0)
+            colors.append('#999')
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=variants,
+            y=values,
+            error_y=dict(type='data', array=errors, visible=True),
+            marker_color=colors,
+            text=[f"{v:.1f}±{e:.1f}" for v, e in zip(values, errors)],
+            textposition='outside',
+            textfont=dict(size=12, color='black'),
+            marker_line=dict(width=2, color='white'),
+            opacity=0.8
+        )
+    ])
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text="Variante", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+def create_box_plots(df, variants, metric, title, unit, color_map):
+    """Cria box plots melhorados para análise de distribuição"""
+    fig = go.Figure()
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        if len(variant_data) > 0:
+            fig.add_trace(go.Box(
+                y=variant_data[metric],
+                name=variant,
+                marker_color=color_map.get(variant, '#999'),
+                boxmean='sd',
+                boxpoints='outliers',
+                jitter=0.3,
+                pointpos=-1.8,
+                marker=dict(size=6, opacity=0.7),
+                line=dict(width=2),
+                fillcolor=f"rgba({int(color_map.get(variant, '#999')[1:3], 16)}, {int(color_map.get(variant, '#999')[3:5], 16)}, {int(color_map.get(variant, '#999')[5:7], 16)}, 0.3)"
+            ))
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        showlegend=True,
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+def create_scatter_plot(df, variants, x_metric, y_metric, title, color_map):
+    """Cria scatter plot melhorado para análise de relações"""
+    fig = go.Figure()
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        if len(variant_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=variant_data[x_metric],
+                y=variant_data[y_metric],
+                mode='markers',
+                name=variant,
+                marker=dict(
+                    size=12,
+                    color=color_map.get(variant, '#999'),
+                    opacity=0.7,
+                    line=dict(width=2, color='white')
+                ),
+                text=[f"Teste {i+1}" for i in range(len(variant_data))],
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"{x_metric}: %{{x}}<br>" +
+                            f"{y_metric}: %{{y}}<br>" +
+                            "Teste: %{text}<extra></extra>"
+            ))
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text=x_metric.replace('_', ' ').title(), font=dict(size=14))),
+        yaxis=dict(title=dict(text=y_metric.replace('_', ' ').title(), font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+def create_heatmap(df, metrics):
+    """Cria heatmap melhorado de correlações entre métricas"""
+    corr_matrix = df[metrics].corr()
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=corr_matrix.values,
+        x=corr_matrix.columns,
+        y=corr_matrix.columns,
+        colorscale='RdBu',
+        zmid=0,
+        text=corr_matrix.values.round(2),
+        texttemplate='%{text}',
+        textfont={"size": 12, "color": "white"},
+        hoverongaps=False,
+        hovertemplate='<b>%{y}</b> vs <b>%{x}</b><br>Correlação: %{z:.3f}<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        title=dict(text="Correlação entre Métricas", font=dict(size=16, color='#2c3e50')),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+def create_timeline_chart(df, variants, metric, title, unit, color_map):
+    """Cria gráfico melhorado de evolução temporal"""
+    df_sorted = df.sort_values('timestamp').copy()
+    fig = go.Figure()
+    
+    for variant in variants:
+        variant_data = df_sorted[df_sorted['variant'] == variant]
+        if len(variant_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=variant_data['timestamp'],
+                y=variant_data[metric],
+                mode='lines+markers',
+                name=variant,
+                line=dict(color=color_map.get(variant, '#999'), width=3),
+                marker=dict(size=8, color=color_map.get(variant, '#999')),
+                text=[f"Teste {i+1}" for i in range(len(variant_data))],
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"Timestamp: %{{x}}<br>" +
+                            f"{metric}: %{{y}}<br>" +
+                            "Teste: %{text}<extra></extra>"
+            ))
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text="Timestamp", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+def create_file_size_chart(file_infos, color_map):
+    """Cria gráfico melhorado de tamanho de arquivos"""
+    variants = [f.variant for f in file_infos]
+    sizes = [f.size_mb for f in file_infos]
+    colors = [color_map.get(v, '#999') for v in variants]
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=variants,
+            y=sizes,
+            marker_color=colors,
+            text=[f"{s:.2f} MB" for s in sizes],
+            textposition='outside',
+            textfont=dict(size=12, color='black'),
+            marker_line=dict(width=2, color='white'),
+            opacity=0.8
+        )
+    ])
+    
+    fig.update_layout(
+        title=dict(text="Tamanho dos Arquivos por Variante", font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text="Variante", font=dict(size=14))),
+        yaxis=dict(title=dict(text="Tamanho (MB)", font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400
+    )
+    
+    return fig
+
+
+# =====================================================================
+# GERAÇÃO DE HTML
+# =====================================================================
+
+def create_html_section(title, content):
+    """Cria uma seção HTML"""
+    return f"""
+    <div class="section">
+        <h2>{title}</h2>
+        {content}
+    </div>
+    """
+
+
+def create_executive_summary(model, df, variants, comparisons, file_infos):
+    """Cria resumo executivo"""
+    content = f"""
+    <div class="summary-grid">
+        <div class="summary-card">
+            <h3>Modelo</h3>
+            <p class="big-number">{model}</p>
+        </div>
+        <div class="summary-card">
+            <h3>Total de Testes</h3>
+            <p class="big-number">{len(df)}</p>
+        </div>
+        <div class="summary-card">
+            <h3>Variantes</h3>
+            <p class="big-number">{len(variants)}</p>
+        </div>
+        <div class="summary-card">
+            <h3>Período</h3>
+            <p class="big-number">{df['timestamp'].min()} a {df['timestamp'].max()}</p>
+        </div>
+    </div>
+    """
+    
+    return create_html_section("Resumo Executivo", content)
+
+
+def create_performance_comparison_table(comparisons):
+    """Cria tabela organizada de comparação de performance"""
+    if not comparisons:
+        return ""
+    
+    # Separar por métrica
+    fps_comparisons = {k: v for k, v in comparisons.items() if 'fps' in v['metric']}
+    load_comparisons = {k: v for k, v in comparisons.items() if 'load' in v['metric']}
+    mem_comparisons = {k: v for k, v in comparisons.items() if 'mem' in v['metric']}
+    
+    def create_metric_table(comparisons_dict, title, icon):
+        if not comparisons_dict:
+            return ""
+        
+        rows = []
+        for key, comp in comparisons_dict.items():
+            arrow = "↓" if comp['better'] else "↑"
+            color = "#28a745" if comp['better'] else "#dc3545"
+            improvement = "Melhora" if comp['better'] else "Piora"
+            
+            rows.append(f"""
+            <tr>
+                <td><span class="variant-badge variant-{comp['variant']}">{comp['variant']}</span></td>
+                <td>{comp['base']:.1f}</td>
+                <td>{comp['value']:.1f}</td>
+                <td style="color: {color}; font-weight: bold;">
+                    <span class="arrow">{arrow}</span> {comp['diff_pct']:.1f}%
+                    <small>({improvement})</small>
+                </td>
+            </tr>
+            """)
+        
+        return f"""
+        <div class="metric-table">
+            <h3>{icon} {title}</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Variante</th>
+                        <th>Original</th>
+                        <th>Valor</th>
+                        <th>Diferença</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+    
+    fps_table = create_metric_table(fps_comparisons, "Performance FPS", "🎯")
+    load_table = create_metric_table(load_comparisons, "Tempo de Carregamento", "⏱️")
+    mem_table = create_metric_table(mem_comparisons, "Uso de Memória", "💾")
+    
+    combined_tables = f"""
+    <div class="comparison-grid">
+        {fps_table}
+        {load_table}
+        {mem_table}
+    </div>
+    """
+    
+    return create_html_section("📊 Comparação de Performance", combined_tables)
+
+
+def create_detailed_stats_tables(all_stats):
+    """Cria tabelas detalhadas de estatísticas organizadas por variante"""
+    if not all_stats:
+        return ""
+    
+    def create_variant_stats_table(variant, metrics_stats):
+        if not metrics_stats:
+            return ""
+        
+        rows = []
+        for metric_name, stats in metrics_stats.items():
+            rows.append(f"""
+            <tr>
+                <td class="metric-name">{metric_name.replace('_', ' ').title()}</td>
+                <td>{stats.mean:.1f}</td>
+                <td>{stats.median:.1f}</td>
+                <td>{stats.std:.1f}</td>
+                <td>{stats.min:.1f}</td>
+                <td>{stats.max:.1f}</td>
+                <td>{stats.count}</td>
+            </tr>
+            """)
+        
+        return f"""
+        <div class="variant-stats">
+            <h3><span class="variant-badge variant-{variant}">{variant}</span> - Estatísticas Detalhadas</h3>
+            <table class="stats-table">
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Média</th>
+                        <th>Mediana</th>
+                        <th>Desvio</th>
+                        <th>Mínimo</th>
+                        <th>Máximo</th>
+                        <th>Testes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+    
+    tables = []
+    for variant, metrics_stats in all_stats.items():
+        tables.append(create_variant_stats_table(variant, metrics_stats))
+    
+    combined_tables = f"""
+    <div class="stats-grid">
+        {''.join(tables)}
+    </div>
+    """
+    
+    return create_html_section("📈 Estatísticas Detalhadas por Variante", combined_tables)
+
+
+def create_file_info_section(file_infos, compression_ratios):
+    """Cria seção melhorada de informações de arquivos"""
+    if not file_infos:
+        return ""
+    
+    def format_size(size_bytes):
+        if size_bytes < 1024:
+            return f"{size_bytes:.0f} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes/1024:.1f} KB"
+        else:
+            return f"{size_bytes/(1024*1024):.2f} MB"
+    
+    rows = []
+    for file_info in file_infos:
+        compression_text = ""
+        compression_badge = ""
+        if file_info.variant in compression_ratios:
+            comp = compression_ratios[file_info.variant]
+            compression_text = f"({comp['compression_pct']:.1f}% menor)"
+            if comp['compression_pct'] > 50:
+                compression_badge = '<span class="badge badge-success">Excelente</span>'
+            elif comp['compression_pct'] > 25:
+                compression_badge = '<span class="badge badge-warning">Bom</span>'
+            else:
+                compression_badge = '<span class="badge badge-info">Moderado</span>'
+        
+        rows.append(f"""
+        <tr>
+            <td><span class="variant-badge variant-{file_info.variant}">{file_info.variant}</span></td>
+            <td class="size-cell">
+                <strong>{file_info.size_mb:.2f} MB</strong>
+                <small>{compression_text}</small>
+                {compression_badge}
+            </td>
+            <td class="path-cell">
+                <code>{file_info.path}</code>
+            </td>
+        </tr>
+        """)
+    
+    table = f"""
+    <div class="file-info-table">
+        <table class="file-table">
+            <thead>
+                <tr>
+                    <th>Variante</th>
+                    <th>Tamanho & Compressão</th>
+                    <th>Caminho do Arquivo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+    </div>
+    """
+    
+    return create_html_section("📁 Informações dos Arquivos", table)
+
+
+# =====================================================================
+# FUNÇÕES DE CÁLCULO DE MÉTRICAS AVANÇADAS
+# =====================================================================
+
+def calculate_fps_stability(variant_data):
+    """
+    Calcula FPS Stability Score
+    Fórmula: 1 - (std_fps / mean_fps)
+    Interpretação: Quanto mais próximo de 1, mais estável
+    """
+    if len(variant_data) == 0:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    mean_fps = variant_data['fps_avg'].mean()
+    std_fps = variant_data['fps_avg'].std()
+    
+    if mean_fps == 0:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'FPS zero'}
+    
+    score = 1 - (std_fps / mean_fps)
+    score = max(0, min(1, score))  # Limitar entre 0 e 1
+    
+    # Classificação
+    if score > 0.95:
+        classification = 'excellent'
+        explanation = 'Excelente estabilidade - FPS muito consistente'
+    elif score > 0.90:
+        classification = 'good'
+        explanation = 'Boa estabilidade - Poucas variações de FPS'
+    elif score > 0.80:
+        classification = 'moderate'
+        explanation = 'Estabilidade moderada - Algumas variações notáveis'
+    else:
+        classification = 'poor'
+        explanation = 'Instável - Muitas flutuações de FPS (stuttering)'
+    
+    return {
+        'score': score,
+        'mean_fps': mean_fps,
+        'std_fps': std_fps,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': '1 - (desvio_padrão / média)'
+    }
+
+
+def calculate_performance_consistency(variant_data):
+    """
+    Calcula Performance Consistency (1% Low / Median Ratio)
+    Mede quão consistente é a performance nos momentos críticos
+    """
+    if len(variant_data) == 0 or 'fps_1pc' not in variant_data or 'fps_median' not in variant_data:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    fps_1pc = variant_data['fps_1pc'].mean()
+    fps_median = variant_data['fps_median'].mean()
+    
+    if fps_median == 0:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'FPS mediano zero'}
+    
+    score = fps_1pc / fps_median
+    score = max(0, min(1, score))
+    
+    # Classificação
+    if score > 0.90:
+        classification = 'excellent'
+        explanation = 'Excelente consistência - Performance estável mesmo em momentos críticos'
+    elif score > 0.75:
+        classification = 'good'
+        explanation = 'Boa consistência - Pequenas quedas em momentos críticos'
+    elif score > 0.60:
+        classification = 'moderate'
+        explanation = 'Consistência moderada - Quedas notáveis em momentos críticos'
+    else:
+        classification = 'poor'
+        explanation = 'Inconsistente - Grandes quedas de FPS (stuttering perceptível)'
+    
+    return {
+        'score': score,
+        'fps_1pc': fps_1pc,
+        'fps_median': fps_median,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': 'FPS_1% / FPS_Mediano'
+    }
+
+
+def calculate_headroom_score(variant_data, target_fps=60):
+    """
+    Calcula Headroom Score - margem acima do FPS target
+    Fórmula: (fps_avg - target) / target
+    """
+    if len(variant_data) == 0:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    mean_fps = variant_data['fps_avg'].mean()
+    score = (mean_fps - target_fps) / target_fps
+    
+    # Classificação
+    if score > 0.5:
+        classification = 'excellent'
+        explanation = f'Muita margem acima de {target_fps} FPS - Pode aumentar qualidade gráfica'
+    elif score > 0.2:
+        classification = 'good'
+        explanation = f'Margem adequada acima de {target_fps} FPS'
+    elif score > 0:
+        classification = 'moderate'
+        explanation = f'Margem pequena acima de {target_fps} FPS - Próximo do limite'
+    else:
+        classification = 'poor'
+        explanation = f'Abaixo do target de {target_fps} FPS - Performance inadequada'
+    
+    return {
+        'score': score,
+        'mean_fps': mean_fps,
+        'target_fps': target_fps,
+        'margin_fps': mean_fps - target_fps,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': f'(FPS_médio - {target_fps}) / {target_fps}'
+    }
+
+
+def calculate_frame_times(variant_data):
+    """
+    Calcula estatísticas de Frame Time em milissegundos
+    Frame Time = 1000 / FPS
+    """
+    if len(variant_data) == 0:
+        return {'avg': 0, 'p99': 0, 'p95': 0, 'p50': 0}
+    
+    # Calcular frame time para cada medição de FPS
+    frame_times_avg = 1000 / variant_data['fps_avg'].replace(0, 1)  # Evitar divisão por zero
+    
+    # Calcular estatísticas
+    result = {
+        'avg': frame_times_avg.mean(),
+        'p50': frame_times_avg.quantile(0.50),
+        'p95': frame_times_avg.quantile(0.95),
+        'p99': frame_times_avg.quantile(0.99),
+        'min': frame_times_avg.min(),
+        'max': frame_times_avg.max(),
+        'formula': '1000 / FPS',
+        'explanation': 'Tempo em ms que cada frame leva para renderizar. Quanto menor, melhor. 16.67ms = 60 FPS'
+    }
+    
+    # Classificação baseada no p99 (worst case)
+    if result['p99'] < 16.67:
+        result['classification'] = 'excellent'
+    elif result['p99'] < 20:
+        result['classification'] = 'good'
+    elif result['p99'] < 33:
+        result['classification'] = 'moderate'
+    else:
+        result['classification'] = 'poor'
+    
+    return result
+
+
+def calculate_memory_efficiency(variant_data, file_info):
+    """
+    Calcula Memory Efficiency Score
+    Fórmula: file_size_mb / mem_usage_mb
+    Quanto menor, mais eficiente (menos expansão na memória)
+    """
+    if len(variant_data) == 0 or file_info is None:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    file_size = file_info.size_mb
+    mem_usage = variant_data['mem_mb'].mean()
+    
+    if mem_usage == 0:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Uso de memória zero'}
+    
+    score = file_size / mem_usage
+    overhead = mem_usage - file_size
+    expansion_ratio = mem_usage / file_size if file_size > 0 else 0
+    
+    # Classificação
+    if score > 0.5 or expansion_ratio < 2:
+        classification = 'excellent'
+        explanation = 'Muito eficiente - Pouca expansão em memória'
+    elif score > 0.3 or expansion_ratio < 3:
+        classification = 'good'
+        explanation = 'Eficiente - Expansão controlada em memória'
+    elif score > 0.2 or expansion_ratio < 4:
+        classification = 'moderate'
+        explanation = 'Normal - Alguma expansão em memória'
+    else:
+        classification = 'poor'
+        explanation = 'Ineficiente - Muita expansão em memória'
+    
+    return {
+        'score': score,
+        'file_size_mb': file_size,
+        'mem_usage_mb': mem_usage,
+        'overhead_mb': overhead,
+        'expansion_ratio': expansion_ratio,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': 'Tamanho_Arquivo / Uso_Memória'
+    }
+
+
+def calculate_load_speed(variant_data, file_info):
+    """
+    Calcula Load Speed em MB/s
+    Fórmula: file_size_mb / (load_ms / 1000)
+    """
+    if len(variant_data) == 0 or file_info is None:
+        return {'speed': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    file_size = file_info.size_mb
+    load_time_ms = variant_data['load_ms'].mean()
+    
+    if load_time_ms == 0:
+        return {'speed': 0, 'classification': 'N/A', 'explanation': 'Tempo de carregamento zero'}
+    
+    load_time_s = load_time_ms / 1000
+    speed_mbps = file_size / load_time_s
+    
+    # Classificação (baseado em velocidade típica de storage)
+    if speed_mbps > 100:
+        classification = 'excellent'
+        explanation = 'Velocidade excelente - SSD de alta performance'
+    elif speed_mbps > 50:
+        classification = 'good'
+        explanation = 'Boa velocidade - SSD padrão'
+    elif speed_mbps > 20:
+        classification = 'moderate'
+        explanation = 'Velocidade moderada - HDD ou SSD lento'
+    else:
+        classification = 'poor'
+        explanation = 'Velocidade baixa - Possível gargalo de I/O'
+    
+    return {
+        'speed': speed_mbps,
+        'file_size_mb': file_size,
+        'load_time_ms': load_time_ms,
+        'load_time_s': load_time_s,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': 'Tamanho_MB / (Tempo_ms / 1000)'
+    }
+
+
+def calculate_compression_metrics(file_infos, variants):
+    """
+    Calcula métricas de compressão comparando com original
+    """
+    results = {}
+    
+    # Encontrar tamanho original
+    original_info = None
+    for fi in file_infos:
+        if fi.variant == 'original':
+            original_info = fi
+            break
+    
+    if original_info is None:
+        return results
+    
+    original_size = original_info.size_mb
+    
+    for fi in file_infos:
+        if fi.variant == 'original':
+            results[fi.variant] = {
+                'ratio': 1.0,
+                'space_savings_pct': 0.0,
+                'space_savings_mb': 0.0,
+                'classification': 'baseline',
+                'explanation': 'Arquivo original (baseline)'
+            }
+        else:
+            ratio = original_size / fi.size_mb if fi.size_mb > 0 else 0
+            savings_pct = ((original_size - fi.size_mb) / original_size * 100) if original_size > 0 else 0
+            savings_mb = original_size - fi.size_mb
+            
+            # Classificação
+            if ratio > 5:
+                classification = 'excellent'
+                explanation = 'Compressão excelente - Redução significativa'
+            elif ratio > 3:
+                classification = 'good'
+                explanation = 'Boa compressão - Redução considerável'
+            elif ratio > 2:
+                classification = 'moderate'
+                explanation = 'Compressão moderada - Redução aceitável'
+            else:
+                classification = 'poor'
+                explanation = 'Compressão fraca - Pouca redução'
+            
+            results[fi.variant] = {
+                'ratio': ratio,
+                'space_savings_pct': savings_pct,
+                'space_savings_mb': savings_mb,
+                'original_size_mb': original_size,
+                'compressed_size_mb': fi.size_mb,
+                'classification': classification,
+                'explanation': explanation,
+                'formula': 'Tamanho_Original / Tamanho_Comprimido'
+            }
+    
+    return results
+
+
+def calculate_compression_efficiency(compression_data, load_overhead_ms):
+    """
+    Calcula Compression Efficiency Score
+    Benefício (espaço economizado) vs Custo (tempo de descompressão)
+    """
+    if 'space_savings_pct' not in compression_data:
+        return {'score': 0, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    savings_pct = compression_data['space_savings_pct']
+    
+    # Se não houver overhead ou for negativo (mais rápido), score máximo
+    if load_overhead_ms <= 0:
+        score = savings_pct  # Score baseado apenas na economia de espaço
+        classification = 'excellent'
+        explanation = 'Sem overhead de descompressão - Compressão totalmente benéfica'
+    else:
+        # Penalizar baseado no overhead (cada 100ms de overhead reduz 10% do score)
+        overhead_penalty = (load_overhead_ms / 100) * 10
+        score = max(0, savings_pct - overhead_penalty)
+        
+        if score > 40:
+            classification = 'excellent'
+            explanation = 'Excelente trade-off - Economia de espaço compensa o tempo de descompressão'
+        elif score > 25:
+            classification = 'good'
+            explanation = 'Bom trade-off - Benefício supera o custo'
+        elif score > 10:
+            classification = 'moderate'
+            explanation = 'Trade-off moderado - Benefício marginal'
+        else:
+            classification = 'poor'
+            explanation = 'Trade-off ruim - Custo de descompressão alto demais'
+    
+    return {
+        'score': score,
+        'space_savings_pct': savings_pct,
+        'load_overhead_ms': load_overhead_ms,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': 'Economia_Espaço% / (Overhead_Descompressão / 100)'
+    }
+
+
+def calculate_performance_impact(variant_data, original_data):
+    """
+    Calcula Performance Impact Score
+    Compara FPS médio da variante comprimida com original
+    """
+    if len(variant_data) == 0 or len(original_data) == 0:
+        return {'score': 100, 'classification': 'N/A', 'explanation': 'Sem dados'}
+    
+    variant_fps = variant_data['fps_avg'].mean()
+    original_fps = original_data['fps_avg'].mean()
+    
+    if original_fps == 0:
+        return {'score': 100, 'classification': 'N/A', 'explanation': 'FPS original zero'}
+    
+    score = (variant_fps / original_fps) * 100
+    fps_diff = variant_fps - original_fps
+    fps_diff_pct = ((variant_fps - original_fps) / original_fps) * 100
+    
+    # Classificação
+    if score >= 100:
+        classification = 'excellent'
+        explanation = 'Sem impacto negativo ou performance melhor'
+    elif score >= 95:
+        classification = 'good'
+        explanation = 'Impacto mínimo na performance (< 5%)'
+    elif score >= 90:
+        classification = 'moderate'
+        explanation = 'Impacto aceitável na performance (5-10%)'
+    else:
+        classification = 'poor'
+        explanation = 'Impacto significativo na performance (> 10%)'
+    
+    return {
+        'score': score,
+        'variant_fps': variant_fps,
+        'original_fps': original_fps,
+        'fps_diff': fps_diff,
+        'fps_diff_pct': fps_diff_pct,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': '(FPS_Comprimido / FPS_Original) * 100'
+    }
+
+
+def calculate_overall_efficiency(compression_data, performance_impact, load_speed_data):
+    """
+    Calcula Overall Efficiency Score - métrica única ponderada
+    Combina: Compressão (40%) + Performance (40%) + Velocidade Carregamento (20%)
+    """
+    # Normalizar compression ratio para 0-100
+    comp_score = 0
+    if 'ratio' in compression_data and compression_data['ratio'] > 0:
+        # Ratio de 1-10 mapeado para 0-100
+        comp_score = min(100, (compression_data['ratio'] - 1) * 11.11)
+    
+    # Performance impact já está em 0-100
+    perf_score = performance_impact.get('score', 100)
+    
+    # Normalizar load speed para 0-100 (assumindo 0-200 MB/s como range)
+    load_score = 0
+    if 'speed' in load_speed_data:
+        load_score = min(100, (load_speed_data['speed'] / 200) * 100)
+    
+    # Score ponderado
+    overall = (comp_score * 0.4) + (perf_score * 0.4) + (load_score * 0.2)
+    
+    # Classificação
+    if overall >= 80:
+        classification = 'excellent'
+        explanation = 'Excelente equilíbrio geral - Compressão eficiente com boa performance'
+    elif overall >= 65:
+        classification = 'good'
+        explanation = 'Bom equilíbrio - Compressão adequada com performance aceitável'
+    elif overall >= 50:
+        classification = 'moderate'
+        explanation = 'Equilíbrio moderado - Trade-offs aceitáveis'
+    else:
+        classification = 'poor'
+        explanation = 'Equilíbrio ruim - Considere outra estratégia de compressão'
+    
+    return {
+        'score': overall,
+        'comp_score': comp_score,
+        'perf_score': perf_score,
+        'load_score': load_score,
+        'classification': classification,
+        'explanation': explanation,
+        'formula': '(Compressão*0.4) + (Performance*0.4) + (Carregamento*0.2)',
+        'weights': 'Compressão: 40%, Performance: 40%, Carregamento: 20%'
+    }
+
+
+def calculate_advanced_metrics(df, file_infos, variants):
+    """
+    Calcula todas as métricas avançadas para cada variante
+    Retorna dict com todas as métricas organizadas
+    """
+    metrics = {}
+    
+    # Obter dados do original para comparações
+    original_data = df[df['variant'] == 'original'] if 'original' in variants else pd.DataFrame()
+    
+    # Calcular métricas de compressão (comparação global)
+    compression_metrics = calculate_compression_metrics(file_infos, variants)
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        
+        # Encontrar file_info desta variante
+        file_info = None
+        for fi in file_infos:
+            if fi.variant == variant:
+                file_info = fi
+                break
+        
+        # Calcular overhead de carregamento (se houver original)
+        load_overhead = 0
+        if len(original_data) > 0 and len(variant_data) > 0:
+            load_overhead = variant_data['load_ms'].mean() - original_data['load_ms'].mean()
+        
+        # Calcular todas as métricas
+        metrics[variant] = {
+            'fps_stability': calculate_fps_stability(variant_data),
+            'performance_consistency': calculate_performance_consistency(variant_data),
+            'headroom_score': calculate_headroom_score(variant_data),
+            'frame_times': calculate_frame_times(variant_data),
+            'memory_efficiency': calculate_memory_efficiency(variant_data, file_info),
+            'load_speed': calculate_load_speed(variant_data, file_info),
+            'compression': compression_metrics.get(variant, {}),
+            'compression_efficiency': calculate_compression_efficiency(
+                compression_metrics.get(variant, {}),
+                load_overhead
+            ),
+            'performance_impact': calculate_performance_impact(variant_data, original_data) if len(original_data) > 0 else {},
+            'overall_efficiency': {}  # Will be calculated after
+        }
+        
+        # Calcular overall efficiency (precisa de outras métricas primeiro)
+        if len(metrics[variant]['compression']) > 0 and len(metrics[variant]['performance_impact']) > 0:
+            metrics[variant]['overall_efficiency'] = calculate_overall_efficiency(
+                metrics[variant]['compression'],
+                metrics[variant]['performance_impact'],
+                metrics[variant]['load_speed']
+            )
+    
+    return metrics
+
+
+# =====================================================================
+# FUNÇÕES DE CRIAÇÃO DE COMPONENTES HTML
+# =====================================================================
+
+def get_badge_icon(classification):
+    """Retorna ícone colorido baseado na classificação"""
+    icons = {
+        'excellent': '🟢',
+        'good': '🟡',
+        'moderate': '🟠',
+        'poor': '🔴',
+        'baseline': '⚪',
+        'N/A': '⚫'
+    }
+    return icons.get(classification, '⚫')
+
+
+def create_metric_card(title, value, unit, classification, explanation, formula=None, subtitle=None):
+    """
+    Cria um card de métrica com explicação
+    
+    Args:
+        title: Título da métrica
+        value: Valor principal
+        unit: Unidade de medida
+        classification: excellent, good, moderate, poor
+        explanation: Texto explicativo
+        formula: Fórmula de cálculo (opcional)
+        subtitle: Subtítulo (opcional)
+    """
+    badge_icon = get_badge_icon(classification)
+    badge_text = classification.title() if classification != 'N/A' else 'N/A'
+    
+    subtitle_html = f'<div class="subtitle">{subtitle}</div>' if subtitle else ''
+    formula_html = f'<div class="formula">📐 Fórmula: {formula}</div>' if formula else ''
+    
+    # Formatação do valor
+    if isinstance(value, float):
+        if value < 1 and value > 0:
+            formatted_value = f"{value:.3f}"
+        elif value < 10:
+            formatted_value = f"{value:.2f}"
+        else:
+            formatted_value = f"{value:.1f}"
+    else:
+        formatted_value = str(value)
+    
+    html = f"""
+    <div class="metric-card">
+        <div class="title">{title}</div>
+        {subtitle_html}
+        <div class="value">
+            {formatted_value} {unit}
+            <span class="badge badge-{classification}">{badge_icon} {badge_text}</span>
+        </div>
+        <div class="explanation">
+            <strong>📖 Interpretação:</strong>
+            {explanation}
+        </div>
+        {formula_html}
+    </div>
+    """
+    return html
+
+
+def create_dashboard_card(variant, metrics_data, file_info):
+    """
+    Cria card do dashboard de resumo para uma variante
+    """
+    # Definir classe de cor do card
+    card_class = f"card-{variant}"
+    
+    # Pegar FPS médio e classificação
+    fps_avg = metrics_data.get('fps_stability', {}).get('mean_fps', 0)
+    overall_class = metrics_data.get('overall_efficiency', {}).get('classification', 'N/A')
+    overall_score = metrics_data.get('overall_efficiency', {}).get('score', 0)
+    
+    # Badge
+    badge_icon = get_badge_icon(overall_class)
+    
+    # Métricas do card
+    file_size = file_info.size_mb if file_info else 0
+    load_time = metrics_data.get('load_speed', {}).get('load_time_ms', 0)
+    
+    html = f"""
+    <div class="dashboard-card {card_class}">
+        <div class="variant-name">{variant}</div>
+        <div class="badge badge-{overall_class}" style="font-size: 14px; padding: 6px 14px;">
+            {badge_icon} {overall_class.title()}
+        </div>
+        <div class="main-metric">{fps_avg:.1f} <small style="font-size: 0.4em;">FPS</small></div>
+        <div class="metric-row">
+            <span class="metric-label">Tamanho</span>
+            <span class="metric-value">{file_size:.2f} MB</span>
+        </div>
+        <div class="metric-row">
+            <span class="metric-label">Carregamento</span>
+            <span class="metric-value">{load_time:.0f} ms</span>
+        </div>
+        <div class="metric-row">
+            <span class="metric-label">Score Geral</span>
+            <span class="metric-value">{overall_score:.1f}/100</span>
+        </div>
+    </div>
+    """
+    return html
+
+
+def create_comparison_bar(label, variants_data, unit="", max_value=None):
+    """
+    Cria uma barra de comparação horizontal entre variantes
+    
+    Args:
+        label: Rótulo da métrica
+        variants_data: Dict {variant: {'value': X, 'classification': 'good'}}
+        unit: Unidade de medida
+        max_value: Valor máximo para normalização (auto se None)
+    """
+    if not variants_data:
+        return ""
+    
+    # Encontrar valor máximo se não fornecido
+    if max_value is None:
+        valid_values = [d['value'] for d in variants_data.values() if isinstance(d.get('value'), (int, float))]
+        if not valid_values:
+            max_value = 1
+        else:
+            max_value = max(valid_values) * 1.1
+    
+    if max_value == 0:
+        max_value = 1
+    
+    bars_html = []
+    for variant, data in variants_data.items():
+        value = data.get('value', 0)
+        classification = data.get('classification', 'moderate')
+        diff_text = data.get('diff_text', '')
+        
+        # Calcular largura da barra (percentual)
+        width_pct = (value / max_value * 100) if max_value > 0 else 0
+        width_pct = min(100, max(5, width_pct))  # Mínimo 5%, máximo 100%
+        
+        # Formatação do valor
+        if isinstance(value, float):
+            if value < 1:
+                formatted_value = f"{value:.3f}"
+            elif value < 10:
+                formatted_value = f"{value:.2f}"
+            else:
+                formatted_value = f"{value:.1f}"
+        else:
+            formatted_value = str(value)
+        
+        bar_html = f"""
+        <div class="comparison-bar">
+            <div class="label">{variant.title()}</div>
+            <div class="bar-wrapper">
+                <div class="bar bar-{classification}" style="width: {width_pct}%;">
+                    <span class="value">{formatted_value} {unit}</span>
+                </div>
+            </div>
+            <div class="diff">{diff_text}</div>
+        </div>
+        """
+        bars_html.append(bar_html)
+    
+    return '<div class="comparison-bar-container">' + ''.join(bars_html) + '</div>'
+
+
+def create_comparison_section(title, variants_data_dict):
+    """
+    Cria seção completa de comparação com múltiplas métricas
+    
+    Args:
+        title: Título da seção
+        variants_data_dict: Dict {metric_name: {variant: {'value': X, ...}}}
+    """
+    html = f'<div class="comparison-section"><h3>{title}</h3>'
+    
+    for metric_name, variants_data in variants_data_dict.items():
+        html += f'<h4 style="color: #666; margin: 20px 0 10px 0;">{metric_name}</h4>'
+        html += create_comparison_bar(metric_name, variants_data)
+    
+    html += '</div>'
+    return html
+
+
+def create_raw_data_section(df, variant, title="Dados Brutos"):
+    """
+    Cria seção expansível com dados brutos em tabela
+    """
+    variant_data = df[df['variant'] == variant]
+    
+    if len(variant_data) == 0:
+        return ""
+    
+    # Selecionar colunas relevantes
+    cols_to_show = ['timestamp', 'fps_avg', 'fps_min', 'fps_max', 'fps_median', 
+                    'fps_1pc', 'mem_mb', 'load_ms']
+    cols_to_show = [c for c in cols_to_show if c in variant_data.columns]
+    
+    table_data = variant_data[cols_to_show].tail(20)  # Últimas 20 amostras
+    table_html = table_data.to_html(classes='data-table', index=False, float_format=lambda x: f'{x:.2f}')
+    
+    html = f"""
+    <details>
+        <summary>📊 {title} - {variant.title()} ({len(table_data)} amostras mostradas)</summary>
+        {table_html}
+    </details>
+    """
+    return html
+
+
+def create_dashboard_summary(advanced_metrics, file_infos, variants):
+    """
+    Cria dashboard de resumo executivo com cards para cada variante
+    """
+    cards_html = []
+    
+    for variant in variants:
+        # Encontrar file_info
+        file_info = None
+        for fi in file_infos:
+            if fi.variant == variant:
+                file_info = fi
+                break
+        
+        if variant in advanced_metrics:
+            card = create_dashboard_card(variant, advanced_metrics[variant], file_info)
+            cards_html.append(card)
+    
+    html = f"""
+    <div class="section">
+        <h2><span class="icon">📊</span> Resumo Executivo</h2>
+        <div class="dashboard-grid">
+            {''.join(cards_html)}
+        </div>
+    </div>
+    """
+    return html
+
+
+def build_html(model, sections):
+    """Constrói HTML completo"""
+    
+    # Ler CSS avançado (se existir)
+    css_path = os.path.join(os.path.dirname(__file__), 'advanced_metrics_styles.css')
+    advanced_css = ""
+    if os.path.exists(css_path):
+        try:
+            with open(css_path, 'r', encoding='utf-8') as f:
+                advanced_css = f.read()
+            print(f"[py] CSS avançado carregado: {len(advanced_css)} caracteres")
+        except Exception as e:
+            print(f"[py] Erro ao ler CSS avançado: {e}")
+    else:
+        print(f"[py] ⚠️ CSS avançado não encontrado em: {css_path}")
+    
+    # Build HTML using safe concatenation to avoid f-string brace escaping issues
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Advanced Report - """ + str(model) + """</title>
+    <style>
+"""
+
+    # basic minimal CSS (keeps layout sane); advanced styles from external CSS will be appended
+    base_css = """
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+.container { max-width: 1600px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; }
+.header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 40px; text-align: center; }
+.content { padding: 40px; }
+.section { margin: 50px 0; padding: 30px; background: #f8f9fa; border-radius: 10px; border-left: 5px solid #4CAF50; }
+.timestamp { color: #888; font-size: 14px; text-align: center; margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+@media (max-width: 768px) { .content { padding: 20px; } .section { padding: 20px; } }
+"""
+
+    html += base_css
+
+    # Append advanced CSS loaded from file if available
+    if advanced_css:
+        html += "\n/* Advanced styles injected from advanced_metrics_styles.css */\n" + advanced_css + "\n"
+
+    html += "</style>\n    <script src=\"https://cdn.plot.ly/plotly-latest.min.js\"></script>\n</head>\n<body>\n    <div class=\"container\">\n        <div class=\"header\">\n            <h1>📊 Advanced Metrics Report</h1>\n            <div class=\"subtitle\">" + str(model) + "</div>\n        </div>\n        <div class=\"content\">\n" + ''.join(sections) + "\n            <div class=\"timestamp\">\n                Gerado em: " + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + "\n            </div>\n        </div>\n    </div>\n</body>\n</html>"
+
+    return html
+
+
+# =====================================================================
+# MAIN
+# =====================================================================
+
+def main():
+    print("[py] ========================================")
+    print("[py] ADVANCED METRICS REPORT GENERATOR")
+    print("[py] ========================================")
+    print(f"[py] Python: {sys.executable}")
+    print(f"[py] Versão: {sys.version}")
+    print(f"[py] Diretório: {os.getcwd()}")
+    
+    args = parse_args()
+    
+    print(f"[py] Modelo: {args.model}")
+    print(f"[py] Output: {args.out}")
+    print(f"[py] CSV Files: {len(args.csv_files)}")
+    print(f"[py] File Info: {len(args.file_info)}")
+    
+    os.makedirs(args.out, exist_ok=True)
+    
+    # Carregar dados
+    df = load_multiple_csvs(args.csv_files)
+    variants = [v.strip().lower() for v in args.variants.split(",") if v.strip()]
+    
+    # Filtrar dados
+    df = df[df['variant'].isin(variants)]
+    df = df.tail(args.last_n * len(variants)) if args.last_n > 0 else df
+    
+    print(f"[py] Dados filtrados: {len(df)} linhas")
+    
+    # Parsear informações de arquivos
+    file_infos = parse_file_info(args.file_info)
+    
+    # Análises
+    print("[py] Executando análises...")
+    comparisons = compare_variants(df, variants)
+    trends = analyze_temporal_evolution(df)
+    compression_ratios = calculate_compression_ratios(file_infos)
+    all_stats = calculate_all_stats(df, variants)
+    
+    # Calcular métricas avançadas
+    print("[py] Calculando métricas avançadas...")
+    advanced_metrics = calculate_advanced_metrics(df, file_infos, variants)
+    
+    # Color map
+    color_map = {
+        "original": "#2196F3",
+        "draco": "#FF9800",
+        "meshopt": "#4CAF50"
+    }
+    
+    # Criar visualizações
+    print("[py] Criando visualizações...")
+    sections = []
+    
+    # 1. Dashboard Resumo (NOVO - Métricas Avançadas)
+    sections.append(create_dashboard_summary(advanced_metrics, file_infos, variants))
+    
+    # 2. Comparação Visual (NOVO - Métricas Avançadas)
+    sections.append(create_comparison_section("Comparação entre Variantes", advanced_metrics))
+    
+    # 3. Métricas de Performance (NOVO - Cards)
+    perf_html = '<div class="section"><h2>📈 Métricas de Performance</h2><div class="metric-grid">'
+    for variant in variants:
+        if variant in advanced_metrics:
+            fps_stab = advanced_metrics[variant]['fps_stability']
+            perf_html += create_metric_card(
+                f"{variant} - FPS Stability",
+                fps_stab['score'],
+                fps_stab.get('unit', 'score'),
+                fps_stab['classification'],
+                fps_stab['explanation']
+            )
+            
+            perf_cons = advanced_metrics[variant]['performance_consistency']
+            perf_html += create_metric_card(
+                f"{variant} - Performance Consistency",
+                perf_cons['score'],
+                perf_cons.get('unit', 'score'),
+                perf_cons['classification'],
+                perf_cons['explanation']
+            )
+            
+            headroom = advanced_metrics[variant]['headroom_score']
+            perf_html += create_metric_card(
+                f"{variant} - Headroom Score",
+                headroom['score'],
+                headroom.get('unit', '%'),
+                headroom['classification'],
+                headroom['explanation']
+            )
+    perf_html += '</div></div>'
+    sections.append(perf_html)
+    
+    # 4. Métricas de Memória (NOVO - Cards)
+    mem_html = '<div class="section"><h2>💾 Métricas de Memória e Carregamento</h2><div class="metric-grid">'
+    for variant in variants:
+        if variant in advanced_metrics:
+            mem_eff = advanced_metrics[variant]['memory_efficiency']
+            mem_html += create_metric_card(
+                f"{variant} - Memory Efficiency",
+                mem_eff['score'],
+                mem_eff.get('unit', 'ratio'),
+                mem_eff['classification'],
+                mem_eff['explanation']
+            )
+            
+            load_spd = advanced_metrics[variant]['load_speed']
+            mem_html += create_metric_card(
+                f"{variant} - Load Speed",
+                load_spd.get('speed', 0),
+                'MB/s',
+                load_spd['classification'],
+                load_spd['explanation']
+            )
+    mem_html += '</div></div>'
+    sections.append(mem_html)
+    
+    # 5. Métricas de Compressão (NOVO - Cards)
+    comp_html = '<div class="section"><h2>🗜️ Métricas de Compressão</h2><div class="metric-grid">'
+    for variant in variants:
+        if variant in advanced_metrics and 'compression' in advanced_metrics[variant]:
+            comp_metrics = advanced_metrics[variant]['compression']
+            if comp_metrics and 'ratio' in comp_metrics:
+                comp_html += create_metric_card(
+                    f"{variant} - Compression Ratio",
+                    comp_metrics['ratio'],
+                    "x",
+                    comp_metrics.get('classification', 'moderate'),
+                    comp_metrics.get('explanation', 'Taxa de compressão'),
+                    formula="Tamanho_Original / Tamanho_Comprimido"
+                )
+                comp_html += create_metric_card(
+                    f"{variant} - Space Savings",
+                    comp_metrics['space_savings_pct'],
+                    "%",
+                    comp_metrics.get('classification', 'moderate'),
+                    f"Economia de {comp_metrics['space_savings_mb']:.1f} MB",
+                    formula="(1 - compressed/original) × 100"
+                )
+    comp_html += '</div></div>'
+    sections.append(comp_html)
+    
+    # 6. Análise Custo-Benefício (NOVO - Cards)
+    cost_html = '<div class="section"><h2>⚖️ Análise Custo-Benefício</h2><div class="metric-grid">'
+    for variant in variants:
+        if variant in advanced_metrics:
+            if 'compression_efficiency' in advanced_metrics[variant] and advanced_metrics[variant]['compression_efficiency']:
+                comp_eff = advanced_metrics[variant]['compression_efficiency']
+                if 'score' in comp_eff:
+                    cost_html += create_metric_card(
+                        f"{variant} - Compression Efficiency",
+                        comp_eff['score'],
+                        comp_eff.get('unit', 'score'),
+                        comp_eff.get('classification', 'moderate'),
+                        comp_eff.get('explanation', 'Eficiência da compressão')
+                    )
+            
+            if 'performance_impact' in advanced_metrics[variant] and advanced_metrics[variant]['performance_impact']:
+                perf_imp = advanced_metrics[variant]['performance_impact']
+                if 'score' in perf_imp:
+                    cost_html += create_metric_card(
+                        f"{variant} - Performance Impact",
+                        perf_imp['score'],
+                        perf_imp.get('unit', '%'),
+                        perf_imp.get('classification', 'moderate'),
+                        perf_imp.get('explanation', 'Impacto na performance')
+                    )
+            
+            if 'overall_efficiency' in advanced_metrics[variant] and advanced_metrics[variant]['overall_efficiency']:
+                overall = advanced_metrics[variant]['overall_efficiency']
+                if 'score' in overall:
+                    cost_html += create_metric_card(
+                        f"{variant} - Overall Efficiency",
+                        overall['score'],
+                        overall.get('unit', 'score'),
+                        overall.get('classification', 'moderate'),
+                        overall.get('explanation', 'Eficiência geral')
+                    )
+    cost_html += '</div></div>'
+    sections.append(cost_html)
+    
+    # 7. Resumo Executivo
+    sections.append(create_executive_summary(args.model, df, variants, comparisons, file_infos))
+    
+    # 2. Informações de Arquivos
+    if file_infos:
+        sections.append(create_file_info_section(file_infos, compression_ratios))
+        fig = create_file_size_chart(file_infos, color_map)
+        sections.append(create_html_section("Tamanho dos Arquivos", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="file_size")}</div>'))
+    
+    # 3. Tabelas de Comparação Organizadas
+    sections.append(create_performance_comparison_table(comparisons))
+    
+    # 4. Estatísticas Detalhadas por Variante
+    sections.append(create_detailed_stats_tables(all_stats))
+    
+    # 5. Gráficos de Barras
+    for metric, title, unit in [("load_ms", "Tempo de Carregamento", "ms"), 
+                                  ("mem_mb", "Memória (média)", "MB"),
+                                  ("fps_avg", "FPS (média)", "FPS")]:
+        fig = create_bar_chart(df, variants, metric, title, unit, color_map)
+        sections.append(create_html_section(title, f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"bar_{metric}")}</div>'))
+    
+    # 6. Box Plots
+    for metric, title, unit in [("fps_avg", "Distribuição de FPS", "FPS"),
+                                  ("load_ms", "Distribuição de Tempo de Carregamento", "ms")]:
+        fig = create_box_plots(df, variants, metric, title, unit, color_map)
+        sections.append(create_html_section(f"{title} (Box Plot)", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"box_{metric}")}</div>'))
+    
+    # 7. Scatter Plots
+    fig = create_scatter_plot(df, variants, "load_ms", "fps_avg", "FPS vs Tempo de Carregamento", color_map)
+    sections.append(create_html_section("Relação FPS vs Load Time", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="scatter_fps_load")}</div>'))
+    
+    # 8. Heatmap
+    metrics_for_corr = ["load_ms", "mem_mb", "fps_avg", "fps_min", "fps_max"]
+    fig = create_heatmap(df, metrics_for_corr)
+    sections.append(create_html_section("Correlação entre Métricas", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="heatmap")}</div>'))
+    
+    # 9. Evolução Temporal
+    fig = create_timeline_chart(df, variants, "fps_avg", "Evolução de FPS ao Longo do Tempo", "FPS", color_map)
+    sections.append(create_html_section("Evolução Temporal", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="timeline_fps")}</div>'))
+    
+    # 10. Dados Brutos Expansíveis (NOVO - Métricas Avançadas)
+    sections.append('<div class="section"><h2>📋 Dados Brutos</h2>')
+    for variant in variants:
+        sections.append(create_raw_data_section(df, variant, "Dados Brutos"))
+    sections.append('</div>')
+    
+    # Construir HTML
+    html = build_html(args.model, sections)
+    
+    # Salvar HTML
+    html_path = os.path.join(args.out, "report.html")
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+    print(f"[py] HTML gerado: {html_path}")
+    
+    # Exportar JSON
+    json_data = {
+        "model": args.model,
+        "timestamp": datetime.now().isoformat(),
+        "file_infos": [f.to_dict() for f in file_infos],
+        "compression_ratios": compression_ratios,
+        "comparisons": [{**c, "better": int(c["better"])} for c in comparisons],
+        "all_stats": {v: {m: s.to_dict() for m, s in metrics.items()} for v, metrics in all_stats.items()},
+        "trends": [{**t, "improving": int(t["improving"])} for t in trends],
+        "total_tests": len(df),
+        "variants": variants
+    }
+    
+    json_path = os.path.join(args.out, "data.json")
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(json_data, f, indent=2)
+    print(f"[py] JSON gerado: {json_path}")
+    
+    # PNG Previews (sempre gerar)
+    print("[py] Gerando previews PNG...")
+    images_dir = os.path.join(args.out, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    try:
+        # 1. Tempo de carregamento
+        load_chart = create_bar_chart(df, variants, "load_ms", "Tempo de Carregamento", "ms", color_map)
+        load_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        load_png_path = os.path.join(images_dir, "bars_load.png")
+        load_chart.write_image(load_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {load_png_path}")
+        
+        # 2. Uso de memória
+        mem_chart = create_bar_chart(df, variants, "mem_mb", "Uso de Memória", "MB", color_map)
+        mem_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        mem_png_path = os.path.join(images_dir, "bars_mem.png")
+        mem_chart.write_image(mem_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {mem_png_path}")
+        
+        # 3. FPS médio
+        fps_chart = create_bar_chart(df, variants, "fps_avg", "Performance FPS", "FPS", color_map)
+        fps_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        fps_png_path = os.path.join(images_dir, "bars_fps.png")
+        fps_chart.write_image(fps_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {fps_png_path}")
+        
+        # 4. FPS Mínimo
+        fps_min_chart = create_bar_chart(df, variants, "fps_min", "FPS Mínimo", "FPS", color_map)
+        fps_min_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        fps_min_png_path = os.path.join(images_dir, "bars_fps_min.png")
+        fps_min_chart.write_image(fps_min_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {fps_min_png_path}")
+        
+        # 5. FPS Máximo
+        fps_max_chart = create_bar_chart(df, variants, "fps_max", "FPS Máximo", "FPS", color_map)
+        fps_max_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        fps_max_png_path = os.path.join(images_dir, "bars_fps_max.png")
+        fps_max_chart.write_image(fps_max_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {fps_max_png_path}")
+        
+        # 6. FPS Mediano
+        fps_median_chart = create_bar_chart(df, variants, "fps_median", "FPS Mediano", "FPS", color_map)
+        fps_median_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        fps_median_png_path = os.path.join(images_dir, "bars_fps_median.png")
+        fps_median_chart.write_image(fps_median_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {fps_median_png_path}")
+        
+        # 7. FPS 1% Low
+        fps_1pc_chart = create_bar_chart(df, variants, "fps_1pc", "FPS 1% Low", "FPS", color_map)
+        fps_1pc_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        fps_1pc_png_path = os.path.join(images_dir, "bars_fps_1pc.png")
+        fps_1pc_chart.write_image(fps_1pc_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {fps_1pc_png_path}")
+        
+        # 8. Tamanho do Arquivo
+        file_size_chart = create_file_size_chart(file_infos, color_map)
+        file_size_chart.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(size=16),
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        file_size_png_path = os.path.join(images_dir, "bars_file_size.png")
+        file_size_chart.write_image(file_size_png_path, width=1600, height=800, scale=1)
+        print(f"[py] PNG: {file_size_png_path}")
+        
+        print("[py] ✓ Previews PNG gerados com sucesso!")
+        
+    except Exception as e:
+        print(f"[py] ⚠️ Erro ao gerar PNGs: {e}")
+        print("[py] ⚠️ Continuando sem previews PNG...")
+    
+    # PDF (se solicitado)
+    if args.pdf:
+        pdf_path = os.path.join(args.out, "report.pdf")
+        print(f"[py] Gerando PDF: {pdf_path}")
+        
+        try:
+            # Criar figura combinada com todos os gráficos principais
+            from plotly.subplots import make_subplots
+            
+            # Criar subplots 2x2
+            fig_combined = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=("Tempo de Carregamento", "Uso de Memória", "Performance FPS", "Tamanho dos Arquivos"),
+                specs=[[{"type": "bar"}, {"type": "bar"}],
+                       [{"type": "bar"}, {"type": "bar"}]]
+            )
+            
+            # Adicionar gráficos de barras
+            for i, metric in enumerate(["load_ms", "mem_mb", "fps_avg"]):
+                row = (i // 2) + 1
+                col = (i % 2) + 1
+                
+                for variant in variants:
+                    variant_data = df[df['variant'] == variant]
+                    if len(variant_data) > 0:
+                        fig_combined.add_trace(
+                            go.Bar(
+                                x=[variant],
+                                y=[variant_data[metric].mean()],
+                                name=f"{variant} ({metric})",
+                                marker_color=color_map.get(variant, "#666666"),
+                                showlegend=False
+                            ),
+                            row=row, col=col
+                        )
+            
+            # Adicionar gráfico de tamanho de arquivos
+            if file_infos:
+                sizes = [fi.size_mb for fi in file_infos]
+                names = [fi.variant for fi in file_infos]
+                colors = [color_map.get(fi.variant, "#666666") for fi in file_infos]
+                
+                fig_combined.add_trace(
+                    go.Bar(
+                        x=names,
+                        y=sizes,
+                        name="Tamanho dos Arquivos",
+                        marker_color=colors,
+                        showlegend=False
+                    ),
+                    row=2, col=2
+                )
+            
+            # Configurar layout
+            fig_combined.update_layout(
+                title=f"Relatório de Performance - {args.model}",
+                height=800,
+                showlegend=False,
+                template='plotly_white'
+            )
+            
+            # Gerar PDF
+            fig_combined.write_image(pdf_path, width=1200, height=800, scale=2)
+            print(f"[py] ✓ PDF gerado: {pdf_path}")
+            
+        except Exception as e:
+            print(f"[py] ⚠️ Erro ao gerar PDF: {e}")
+            print(f"[py] ⚠️ Continuando sem PDF...")
+    
+    print("[py] ✓ Report gerado com sucesso!")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"[py] ❌ Erro fatal: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+

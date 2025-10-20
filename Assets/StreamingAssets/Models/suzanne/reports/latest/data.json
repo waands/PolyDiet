@@ -1,0 +1,62 @@
+{
+  "model": "suzanne",
+  "timestamp": "2025-10-19T23:06:29.871079",
+  "variants": {
+    "original": {
+      "samples": 3,
+      "file_mb_avg": 0.019,
+      "load_ms_avg": 328.44,
+      "load_ms_std": 8.364073947544947,
+      "mem_mb_avg": 399.44866666666667,
+      "mem_mb_std": 10.545884758204638,
+      "fps_avg": 10.013333333333334,
+      "fps_avg_std": 0.01154700538379227,
+      "fps_min": 9.47,
+      "fps_max": 10.23,
+      "fps_median": 10.02,
+      "fps_1pc_avg": 9.64
+    },
+    "draco": {
+      "samples": 3,
+      "file_mb_avg": 0.004,
+      "load_ms_avg": 377.04033333333336,
+      "load_ms_std": 113.08152431468784,
+      "mem_mb_avg": 393.5783333333334,
+      "mem_mb_std": 0.019857828011468504,
+      "fps_avg": 10.006666666666666,
+      "fps_avg_std": 0.025166114784235295,
+      "fps_min": 9.32,
+      "fps_max": 10.16,
+      "fps_median": 10.01,
+      "fps_1pc_avg": 9.700000000000001
+    },
+    "meshopt": {
+      "samples": 3,
+      "file_mb_avg": 0.006000000000000001,
+      "load_ms_avg": 418.751,
+      "load_ms_std": 4.1358930111887595,
+      "mem_mb_avg": 393.45733333333334,
+      "mem_mb_std": 0.018339392937979388,
+      "fps_avg": 10.013333333333334,
+      "fps_avg_std": 0.005773502691896135,
+      "fps_min": 9.24,
+      "fps_max": 10.15,
+      "fps_median": 10.01,
+      "fps_1pc_avg": 9.683333333333332
+    }
+  },
+  "comparisons": {
+    "draco_vs_original": {
+      "file_size_reduction_pct": 78.94736842105263,
+      "load_time_change_pct": 14.797324726992256,
+      "mem_change_pct": -1.4696089443282556,
+      "fps_change_pct": -0.06657789613849242
+    },
+    "meshopt_vs_original": {
+      "file_size_reduction_pct": 68.42105263157893,
+      "load_time_change_pct": 27.49695530386067,
+      "mem_change_pct": -1.499900696459953,
+      "fps_change_pct": 0.0
+    }
+  }
+}
