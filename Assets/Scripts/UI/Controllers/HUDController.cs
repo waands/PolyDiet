@@ -44,7 +44,7 @@ public class HUDController : MonoBehaviour
 
     void Awake()
     {
-        if (buttonToggleWizard) buttonToggleWizard.onClick.AddListener(() => wizard?.Toggle());
+        if (buttonToggleWizard) buttonToggleWizard.onClick.AddListener(OnClickWizard);
         if (buttonQuickLoad)    buttonQuickLoad.onClick.AddListener(ShowComparePanel); // "Preview" abre o painel inteligente
         if (buttonResetCamera)  buttonResetCamera.onClick.AddListener(() => ResetCamera());
         
@@ -153,9 +153,31 @@ public class HUDController : MonoBehaviour
     // ============ MODEL SELECTOR (REMOVIDO - agora usa comparePanel) ============
 
     // ======== COMPARE PANEL (CHIP SYSTEM) ========
+    
+    /// <summary>
+    /// Callback para o botão do Wizard - fecha outros painéis automaticamente
+    /// </summary>
+    void OnClickWizard()
+    {
+        // Fecha painel de relatórios se estiver aberto
+        if (reportsPanel != null && reportsPanel.activeSelf)
+        {
+            reportsPanel.SetActive(false);
+            Debug.Log("[HUD] Fechando painel de relatórios automaticamente (wizard aberto)");
+        }
+        
+        wizard?.Toggle();
+    }
 
     void ShowComparePanel()
     {
+        // Fecha painel de relatórios se estiver aberto
+        if (reportsPanel != null && reportsPanel.activeSelf)
+        {
+            reportsPanel.SetActive(false);
+            Debug.Log("[HUD] Fechando painel de relatórios automaticamente (preview aberto)");
+        }
+        
         if (!comparePanel || viewer == null) 
         {
             Debug.LogError($"[HUD] ShowComparePanel failed: comparePanel={comparePanel != null}, viewer={viewer != null}");
@@ -490,18 +512,31 @@ public class HUDController : MonoBehaviour
     }
     
     /// <summary>
-    /// Callback para o botão de relatórios
+    /// Callback para o botão de relatórios - fecha outros painéis automaticamente
     /// </summary>
     public void OnClickReports()
     {
         if (reportsPanel != null)
         {
             bool isActive = reportsPanel.activeSelf;
-            reportsPanel.SetActive(!isActive);
             
             if (!isActive)
             {
+                // Fecha outros painéis automaticamente ao abrir relatórios
+                if (comparePanel != null && comparePanel.activeSelf)
+                {
+                    HideComparePanel();
+                    Debug.Log("[HUD] Fechando painel de preview automaticamente (relatórios aberto)");
+                }
+                
+                if (wizard != null && wizard.panel != null && wizard.panel.activeSelf)
+                {
+                    wizard.Hide();
+                    Debug.Log("[HUD] Fechando wizard automaticamente (relatórios aberto)");
+                }
+                
                 Debug.Log("[HUD] Abrindo painel de relatórios");
+                reportsPanel.SetActive(true);
                 
                 // Atualizar UI do painel de relatórios
                 var reportsController = reportsPanel.GetComponent<ReportsPanelController>();
@@ -513,6 +548,7 @@ public class HUDController : MonoBehaviour
             else
             {
                 Debug.Log("[HUD] Fechando painel de relatórios");
+                reportsPanel.SetActive(false);
             }
         }
         else

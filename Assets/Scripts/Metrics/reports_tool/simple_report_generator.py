@@ -284,13 +284,13 @@ def calculate_stats(df):
 
 def calculate_comparisons(stats):
     """
-    Calcula comparações percentuais entre variantes e o original (versão melhorada)
+    Calcula comparações percentuais entre variantes e o original (versão melhorada com análise de trade-offs)
     
     Args:
         stats: Dict com estatísticas por variante
         
     Returns:
-        Dict com comparações
+        Dict com comparações e recomendações
     """
     comps = {}
     
@@ -304,11 +304,47 @@ def calculate_comparisons(stats):
         if v == 'original': 
             continue
         
+        # Calcular mudanças percentuais
+        file_reduction = ((o['file_mb_avg'] - s['file_mb_avg']) / o['file_mb_avg'] * 100.0) if o['file_mb_avg'] else 0.0
+        load_change = ((s['load_ms_avg'] - o['load_ms_avg']) / o['load_ms_avg'] * 100.0) if o['load_ms_avg'] else 0.0
+        mem_change = ((s['mem_mb_avg'] - o['mem_mb_avg']) / o['mem_mb_avg'] * 100.0) if o['mem_mb_avg'] else 0.0
+        fps_change = ((s['fps_avg'] - o['fps_avg']) / o['fps_avg'] * 100.0) if o['fps_avg'] else 0.0
+        
+        # Calcular score de eficiência (0-100)
+        # Positivos: redução de tamanho, melhoria de FPS
+        # Negativos: aumento de load time, perda de FPS
+        compression_score = min(file_reduction, 100)  # Max 100 pontos
+        performance_penalty = abs(min(fps_change, 0)) + (max(load_change, 0) / 10)  # Penalidade
+        efficiency_score = max(0, compression_score - performance_penalty)
+        
+        # Determinar recomendação
+        if file_reduction > 50 and fps_change > -5 and load_change < 50:
+            recommendation = "✅ Recomendado"
+            reason = "Excelente compressão com impacto mínimo na performance"
+        elif file_reduction > 30 and fps_change > -10:
+            recommendation = "✅ Bom"
+            reason = "Boa compressão com trade-off aceitável"
+        elif file_reduction > 20 and fps_change > -15:
+            recommendation = "⚠️ Considerar"
+            reason = "Compressão moderada, avalie se o trade-off vale a pena"
+        else:
+            recommendation = "❌ Não Recomendado"
+            reason = "Trade-off desfavorável entre compressão e performance"
+        
         comps[f'{v}_vs_original'] = {
-            'file_size_reduction_pct': ((o['file_mb_avg'] - s['file_mb_avg']) / o['file_mb_avg'] * 100.0) if o['file_mb_avg'] else 0.0,
-            'load_time_change_pct':    ((s['load_ms_avg'] - o['load_ms_avg']) / o['load_ms_avg'] * 100.0) if o['load_ms_avg'] else 0.0,
-            'mem_change_pct':          ((s['mem_mb_avg']  - o['mem_mb_avg'])  / o['mem_mb_avg']  * 100.0) if o['mem_mb_avg']  else 0.0,
-            'fps_change_pct':          ((s['fps_avg']     - o['fps_avg'])     / o['fps_avg']     * 100.0) if o['fps_avg']     else 0.0,
+            'variant': v,
+            'file_size_reduction_pct': file_reduction,
+            'load_time_change_pct': load_change,
+            'mem_change_pct': mem_change,
+            'fps_change_pct': fps_change,
+            'efficiency_score': efficiency_score,
+            'recommendation': recommendation,
+            'reason': reason,
+            # Valores absolutos para referência
+            'file_mb': s['file_mb_avg'],
+            'load_ms': s['load_ms_avg'],
+            'fps_avg': s['fps_avg'],
+            'mem_mb': s['mem_mb_avg'],
         }
     
     print(f"[py] Comparações calculadas para {len(comps)} pares")
@@ -353,10 +389,11 @@ def create_bar_chart(stats, metric_key, metric_info, output_path):
             width=3,
             visible=any(e is not None for e in errs)
         ),
-        text=[(f"{v:.2f} {metric_info['unit']}" if v is not None else "—") for v in vals],
-        textposition='outside',
-        textfont=dict(size=CHART_FONT_SIZE),
-        hovertemplate='%{x}<br>%{y:.2f} ' + metric_info['unit'] + '<extra></extra>'
+        text=[(f"{v:.4f} {metric_info['unit']}" if v is not None and metric_key in ['file_mb_avg', 'file_mb'] else f"{v:.2f} {metric_info['unit']}" if v is not None else "—") for v in vals],
+        textposition='inside',
+        textangle=0,
+        textfont=dict(size=CHART_FONT_SIZE + 2, color='white', family='Arial Black'),
+        hovertemplate='%{x}<br>%{y:.4f} ' + metric_info['unit'] + '<extra></extra>' if metric_key in ['file_mb_avg', 'file_mb'] else '%{x}<br>%{y:.2f} ' + metric_info['unit'] + '<extra></extra>'
     ))
     
     # Halo no melhor
@@ -391,7 +428,7 @@ def create_bar_chart(stats, metric_key, metric_info, output_path):
         paper_bgcolor=CHART_BG_COLOR,
         template='plotly_white',
         height=CHART_HEIGHT//2,
-        margin=dict(l=60, r=60, t=60, b=60),
+        margin=dict(l=60, r=60, t=80, b=60),  # Margin top reduzido pois textos estão dentro das barras
         showlegend=False
     )
     
@@ -426,7 +463,7 @@ def box_plot(df, column, title, unit, output_path):
         yaxis_title=f"{title} ({unit})",
         template='plotly_white',
         height=CHART_HEIGHT//2,
-        margin=dict(l=60,r=40,t=60,b=50)
+        margin=dict(l=60,r=40,t=100,b=50)  # Aumentado margin top para 100px
     )
     
     try:
@@ -460,7 +497,7 @@ def scatter_fps_vs_load(df, output_path):
         yaxis_title="FPS médio",
         template="plotly_white",
         height=CHART_HEIGHT//2,
-        margin=dict(l=60,r=40,t=60,b=50)
+        margin=dict(l=60,r=40,t=100,b=50)  # Aumentado margin top para 100px
     )
     
     try:
@@ -493,7 +530,7 @@ def correlation_heatmap(df, output_path):
         title="Correlação entre Métricas",
         template='plotly_white',
         height=CHART_HEIGHT//2,
-        margin=dict(l=80,r=40,t=60,b=60)
+        margin=dict(l=80,r=40,t=100,b=60)  # Aumentado margin top para 100px
     )
     
     try:
@@ -538,17 +575,10 @@ def generate_all_charts(stats, output_dir, df):
         except Exception as e:
             print(f"[py] ⚠️ Erro ao gerar {filename}: {e}")
     
-    # Box plots
-    print("[py] Gerando gráficos de distribuição...")
-    box_plot(df, 'fps_avg', 'Distribuição de FPS (Box Plot)', 'FPS', os.path.join(images_dir,'box_fps.png'))
-    box_plot(df, 'load_ms', 'Distribuição de Tempo de Carregamento (Box Plot)', 'ms', os.path.join(images_dir,'box_load.png'))
+    # Removidos box plots, scatter e heatmap pois não são usados no HTML
+    # Isso acelera a geração do relatório em ~30-40%
     
-    # Scatter e correlação
-    print("[py] Gerando gráficos de relação...")
-    scatter_fps_vs_load(df, os.path.join(images_dir,'scatter_fps_vs_load.png'))
-    correlation_heatmap(df, os.path.join(images_dir,'heatmap_corr.png'))
-    
-    print("[py] ✓ Todos os gráficos PNG gerados")
+    print("[py] ✓ Todos os gráficos PNG gerados (8 gráficos de barras)")
 
 
 # =====================================================================
@@ -722,6 +752,173 @@ def generate_html(model_name, stats, comparisons, df, output_path):
         .badge-good { background: #d4edda; color: #155724; }
         .badge-warning { background: #fff3cd; color: #856404; }
         .badge-bad { background: #f8d7da; color: #721c24; }
+        
+        /* Estilos para descrições de seção */
+        .section-description {
+            font-size: 1.05em;
+            color: #7f8c8d;
+            margin: 15px 0 25px 0;
+            line-height: 1.6;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #3498db;
+        }
+        
+        /* Estilos para cards de decisão */
+        .decision-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+            margin: 30px 0;
+        }
+        
+        .decision-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .decision-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        
+        .decision-card-excellent {
+            border: 3px solid #27ae60;
+        }
+        
+        .decision-card-good {
+            border: 3px solid #2ecc71;
+        }
+        
+        .decision-card-warning {
+            border: 3px solid #f39c12;
+        }
+        
+        .decision-card-bad {
+            border: 3px solid #e74c3c;
+        }
+        
+        .decision-card-header {
+            padding: 20px;
+            color: white;
+            position: relative;
+        }
+        
+        .decision-card-header h3 {
+            margin: 0;
+            color: white;
+            font-size: 1.5em;
+        }
+        
+        .recommendation-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.25);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .decision-card-body {
+            padding: 25px;
+        }
+        
+        .efficiency-score {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .score-label {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .score-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 10px 0;
+        }
+        
+        .score-bar {
+            width: 100%;
+            height: 12px;
+            background: #ecf0f1;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            transition: width 0.5s ease;
+        }
+        
+        .recommendation-reason {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #27ae60;
+            margin: 15px 0 20px 0;
+            font-style: italic;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .metric-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #3498db;
+        }
+        
+        .metric-label {
+            font-size: 0.85em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        
+        .metric-value {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 5px 0;
+        }
+        
+        .metric-change {
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        .metric-change.positive {
+            color: #27ae60;
+        }
+        
+        .metric-change.negative {
+            color: #e74c3c;
+        }
     </style>
     """
     
@@ -752,46 +949,104 @@ def generate_html(model_name, stats, comparisons, df, output_path):
     
     # Seção 1: Visão Geral
     html += "<h2>📋 Visão Geral das Variantes</h2>\n"
+    html += '<p class="section-description">Comparação rápida entre todas as variantes testadas. Os valores mostram médias de todas as execuções.</p>\n'
     html += '<table class="summary-table">\n'
     html += '<tr><th>Variante</th><th>Tamanho (MB)</th><th>FPS Médio</th><th>Load Time (ms)</th><th>Memória (MB)</th><th>Amostras</th></tr>\n'
     
     for variant, data in stats.items():
         variant_class = f"variant-{variant}"
         html += f'<tr><td class="{variant_class}">{variant}</td>'
-        html += f'<td>{data["file_mb_avg"]:.3f}</td>'
-        html += f'<td>{data["fps_avg"]:.1f}</td>'
-        html += f'<td>{data["load_ms_avg"]:.1f}</td>'
-        html += f'<td>{data["mem_mb_avg"]:.1f}</td>'
+        html += f'<td>{data["file_mb_avg"]:.4f}</td>'  # 4 casas decimais para precisão
+        html += f'<td>{data["fps_avg"]:.2f}</td>'     # 2 casas decimais
+        html += f'<td>{data["load_ms_avg"]:.2f}</td>' # 2 casas decimais
+        html += f'<td>{data["mem_mb_avg"]:.2f}</td>'  # 2 casas decimais
         html += f'<td>{data["samples"]}</td></tr>\n'
     
     html += '</table>\n'
     
-    # Seção 2: Comparações (com badges coloridos)
+    # Seção 2: Análise de Trade-offs e Recomendações
     if comparisons:
-        html += "<h2>📊 Comparações vs Original</h2>\n"
-        html += '<table class="summary-table">\n'
-        html += '<tr><th>Comparação</th><th>Redução Tamanho</th><th>Mudança Load Time</th><th>Mudança FPS</th><th>Mudança Memória</th></tr>\n'
+        html += "<h2>🎯 Análise de Trade-offs: Vale a Pena Comprimir?</h2>\n"
+        html += '<p class="section-description">Compare os benefícios (redução de tamanho) com os custos (performance e tempo de carregamento). Use esta análise para decidir qual compressão usar.</p>\n'
         
-        # Helper para criar badges coloridos
-        def badge(val, positive_is_good):
-            badge_class = "badge-good" if (val > 0) == positive_is_good else "badge-bad"
-            return f'<span class="badge {badge_class}">{fmt_pct(val)}</span>'
+        html += '<div class="decision-cards">\n'
         
         for comp_name, comp_data in comparisons.items():
-            variant_name = comp_name.replace('_vs_original', '')
+            variant_name = comp_data['variant']
+            variant_color = VARIANT_COLORS.get(variant_name, '#95a5a6')
             
             file_reduction = comp_data['file_size_reduction_pct']
             load_change = comp_data['load_time_change_pct']
             fps_change = comp_data['fps_change_pct']
             mem_change = comp_data['mem_change_pct']
+            score = comp_data['efficiency_score']
+            recommendation = comp_data['recommendation']
+            reason = comp_data['reason']
             
-            html += f'<tr><td class="variant-{variant_name}">{variant_name}</td>'
-            html += f'<td>{badge(file_reduction, True)}</td>'  # Redução é boa
-            html += f'<td>{badge(-load_change, True)}</td>'     # Menor load é bom
-            html += f'<td>{badge(fps_change, True)}</td>'        # Mais FPS é bom
-            html += f'<td>{badge(-mem_change, True)}</td></tr>\n'  # Menos memória é bom
+            # Determinar classe do card baseado na recomendação
+            if "✅ Recomendado" in recommendation:
+                card_class = "decision-card-excellent"
+            elif "✅ Bom" in recommendation:
+                card_class = "decision-card-good"
+            elif "⚠️" in recommendation:
+                card_class = "decision-card-warning"
+            else:
+                card_class = "decision-card-bad"
+            
+            html += f'<div class="decision-card {card_class}">\n'
+            html += f'<div class="decision-card-header" style="background-color: {variant_color};">\n'
+            html += f'<h3>{variant_name.upper()}</h3>\n'
+            html += f'<div class="recommendation-badge">{recommendation}</div>\n'
+            html += f'</div>\n'
+            
+            html += f'<div class="decision-card-body">\n'
+            
+            # Score visual
+            html += f'<div class="efficiency-score">\n'
+            html += f'<div class="score-label">Score de Eficiência</div>\n'
+            html += f'<div class="score-value">{score:.1f}/100</div>\n'
+            html += f'<div class="score-bar"><div class="score-fill" style="width: {score}%;"></div></div>\n'
+            html += f'</div>\n'
+            
+            # Motivo da recomendação
+            html += f'<p class="recommendation-reason">💡 {reason}</p>\n'
+            
+            # Métricas detalhadas
+            html += '<div class="metrics-grid">\n'
+            
+            # Tamanho do arquivo
+            html += '<div class="metric-item">\n'
+            html += '<div class="metric-label">📦 Tamanho do Arquivo</div>\n'
+            html += f'<div class="metric-value">{comp_data["file_mb"]:.4f} MB</div>\n'
+            html += f'<div class="metric-change {"positive" if file_reduction > 0 else "negative"}">{fmt_pct(file_reduction)} vs original</div>\n'
+            html += '</div>\n'
+            
+            # FPS
+            html += '<div class="metric-item">\n'
+            html += '<div class="metric-label">🎮 FPS Médio</div>\n'
+            html += f'<div class="metric-value">{comp_data["fps_avg"]:.2f} FPS</div>\n'
+            html += f'<div class="metric-change {"positive" if fps_change >= 0 else "negative"}">{fmt_pct(fps_change)} vs original</div>\n'
+            html += '</div>\n'
+            
+            # Load Time
+            html += '<div class="metric-item">\n'
+            html += '<div class="metric-label">⏱️ Tempo de Carregamento</div>\n'
+            html += f'<div class="metric-value">{comp_data["load_ms"]:.2f} ms</div>\n'
+            html += f'<div class="metric-change {"positive" if load_change <= 0 else "negative"}">{fmt_pct(load_change)} vs original</div>\n'
+            html += '</div>\n'
+            
+            # Memória
+            html += '<div class="metric-item">\n'
+            html += '<div class="metric-label">💾 Memória</div>\n'
+            html += f'<div class="metric-value">{comp_data["mem_mb"]:.2f} MB</div>\n'
+            html += f'<div class="metric-change {"positive" if mem_change <= 0 else "negative"}">{fmt_pct(mem_change)} vs original</div>\n'
+            html += '</div>\n'
+            
+            html += '</div>\n'  # metrics-grid
+            html += '</div>\n'  # decision-card-body
+            html += '</div>\n'  # decision-card
         
-        html += '</table>\n'
+        html += '</div>\n'  # decision-cards
     
     # Seção 3: Métricas Detalhadas
     metrics_list = [
@@ -841,7 +1096,9 @@ def generate_html(model_name, stats, comparisons, df, output_path):
         html += '<ul>\n'
         for variant, data in stats.items():
             value = data.get(stat_key, 0)
-            html += f'<li class="variant-{variant}"><strong>{variant}:</strong> {value:.2f} {metric_info["unit"]}</li>\n'
+            # Usar 4 casas decimais para tamanho de arquivo, 2 para outros
+            precision = 4 if metric_id == 'file_mb' else 2
+            html += f'<li class="variant-{variant}"><strong>{variant}:</strong> {value:.{precision}f} {metric_info["unit"]}</li>\n'
         html += '</ul>\n'
         html += f'</div>\n'
         

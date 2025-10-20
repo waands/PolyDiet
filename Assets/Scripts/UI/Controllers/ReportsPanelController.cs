@@ -116,7 +116,17 @@ namespace PolyDiet.UI.Controllers
         
         void OnEnable()
         {
+            // Bloqueia movimento da câmera quando painel estiver aberto
+            UIInputLock.Lock(this);
             UpdateUI();
+            Debug.Log("[ReportsPanel] Painel aberto - câmera bloqueada");
+        }
+        
+        void OnDisable()
+        {
+            // Desbloqueia movimento da câmera quando painel for fechado
+            UIInputLock.Unlock(this);
+            Debug.Log("[ReportsPanel] Painel fechado - câmera desbloqueada");
         }
         
         /// <summary>
