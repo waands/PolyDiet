@@ -26,8 +26,11 @@ public class SimpleOrbitCamera : MonoBehaviour
 
     [Header("Stability / Safety")]
     public bool keepNearModel = true;        // "coleira" de pan pra não se perder
-    [Range(1f, 10f)] public float panLeashRadiuses = 4f; // quantos "raios" do modelo
+    [Range(1f, 10f)] public float panLeashRadiuses = 2.5f; // quantos "raios" do modelo (reduzido para manter modelo mais próximo)
     public bool autoAdjustClipPlanes = true;
+    public bool clampDistanceToModel = true; // impede zoom excessivo que perde o modelo
+    [Range(0.5f, 5f)] public float minDistanceMultiplier = 0.8f; // multiplicador do raio do modelo para distância mínima
+    [Range(2f, 20f)] public float maxDistanceMultiplier = 8f; // multiplicador do raio do modelo para distância máxima
 
     [Header("UI Lock")]
     public bool respectUILock = true;        // usa UIInputLock.IsLocked
@@ -85,13 +88,25 @@ public class SimpleOrbitCamera : MonoBehaviour
         // ===== segurança contra "perder o alvo" =====
         if (keepNearModel && _hasBounds)
         {
+            // Limita pan para manter modelo visível
             float leash = _lastBounds.extents.magnitude * panLeashRadiuses;
             Vector3 toFocus = _focus - _lastBounds.center;
             if (toFocus.sqrMagnitude > leash * leash)
                 _focus = _lastBounds.center + toFocus.normalized * leash;
 
-            // evita distâncias absurdas por acidente
-            _distance = Mathf.Clamp(_distance, minDistance, Mathf.Max(minDistance * 2f, _lastBounds.extents.magnitude * 20f));
+            // Limita zoom baseado no tamanho do modelo para evitar perder visualização
+            if (clampDistanceToModel)
+            {
+                float modelRadius = _lastBounds.extents.magnitude;
+                float minAllowed = Mathf.Max(minDistance, modelRadius * minDistanceMultiplier);
+                float maxAllowed = Mathf.Min(maxDistance, modelRadius * maxDistanceMultiplier);
+                _distance = Mathf.Clamp(_distance, minAllowed, maxAllowed);
+            }
+            else
+            {
+                // comportamento antigo: evita distâncias absurdas por acidente
+                _distance = Mathf.Clamp(_distance, minDistance, Mathf.Max(minDistance * 2f, _lastBounds.extents.magnitude * 20f));
+            }
         }
 
         // ===== aplica pose =====
@@ -131,10 +146,20 @@ public class SimpleOrbitCamera : MonoBehaviour
 
         if (autoAdjustClipPlanes && _cam)
         {
-            float near = Mathf.Max(0.01f, _distance - r * 1.2f);
-            float far  = _distance + r * 4f;
-            _cam.nearClipPlane = Mathf.Clamp(near, 0.01f, 5f);
+            // Near plane dinâmico mas com mínimo muito baixo para zoom próximo
+            // Calcula de forma conservadora para evitar cortar o modelo
+            float near = Mathf.Max(0.001f, (_distance - r * 1.5f) * 0.5f);
+            float far  = _distance + r * 6f;
+            
+            // Limite máximo do near plane proporcional ao tamanho do modelo
+            // Isso mantém near plane baixo para modelos pequenos/zoom próximo
+            float maxNear = Mathf.Max(0.05f, r * 0.15f);
+            
+            _cam.nearClipPlane = Mathf.Clamp(near, 0.001f, maxNear);
             _cam.farClipPlane  = Mathf.Max(_cam.nearClipPlane + 10f, far);
+            
+            // Debug para diagnosticar (descomente se necessário)
+            // Debug.Log($"[Camera] Near: {_cam.nearClipPlane:F4} (max: {maxNear:F4}), Far: {_cam.farClipPlane:F2}, Dist: {_distance:F2}, Radius: {r:F2}");
         }
     }
 

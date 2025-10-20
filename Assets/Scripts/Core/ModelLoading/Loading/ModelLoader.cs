@@ -296,7 +296,7 @@ namespace PolyDiet.Core.ModelLoading.Loading
         }
         
         /// <summary>
-        /// Normaliza escala do modelo carregado
+        /// Normaliza escala do modelo carregado para tamanho padrão visível
         /// </summary>
         private void NormalizeModelScale(GameObject modelContainer)
         {
@@ -313,14 +313,24 @@ namespace PolyDiet.Core.ModelLoading.Loading
                     combinedBounds.Encapsulate(renderers[i].bounds);
                 }
                 
-                // Calcula escala para normalizar para tamanho unitário
-                float maxDimension = Mathf.Max(combinedBounds.size.x, combinedBounds.size.y, combinedBounds.size.z);
-                if (maxDimension > 0.001f) // Evita divisão por zero
+                // Tamanho atual do modelo (maior dimensão)
+                float currentSize = Mathf.Max(combinedBounds.size.x, combinedBounds.size.y, combinedBounds.size.z);
+                if (currentSize < 0.001f) return; // Evita divisão por zero
+                
+                // Tamanho alvo: 2 unidades para visualização confortável
+                const float targetSize = 2.0f;
+                float scaleFactor = targetSize / currentSize;
+                
+                // Aplica escala apenas se necessário (tolerância de 20%)
+                const float tolerance = 0.2f;
+                if (Mathf.Abs(scaleFactor - 1.0f) > tolerance)
                 {
-                    float scaleFactor = 1.0f / maxDimension;
                     modelContainer.transform.localScale = Vector3.one * scaleFactor;
-                    
-                    Debug.Log($"[ModelLoader] Normalized scale: {scaleFactor:F3} (max dimension: {maxDimension:F3})");
+                    Debug.Log($"[ModelLoader] Normalized scale: {currentSize:F3} → {targetSize:F3} (factor: {scaleFactor:F3}x)");
+                }
+                else
+                {
+                    Debug.Log($"[ModelLoader] Model already at ideal size ({currentSize:F3}), no scaling needed");
                 }
             }
             catch (Exception ex)

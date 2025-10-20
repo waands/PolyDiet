@@ -14253,7 +14253,6 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   pythonPath: /home/wands/Documentos/tcc/PolyDiet/reports_tool/.venv/bin/python
-  useAdvancedScript: 1
   scriptPath: /home/wands/Documentos/tcc/PolyDiet/Assets/Scripts/Metrics/reports_tool/simple_report_generator.py
   packagedExePath: 
   csvPathOverride: 
@@ -17602,7 +17601,6 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   pythonPath: /home/wands/Documentos/tcc/PolyDiet/reports_tool/.venv/bin/python
-  useAdvancedScript: 1
   scriptPath: /home/wands/Documentos/tcc/PolyDiet/Assets/Scripts/Metrics/reports_tool/simple_report_generator.py
   packagedExePath: 
   csvPathOverride: /home/wands/Documentos/tcc/PolyDiet/Benchmarks/benchmarks.csv
@@ -22039,10 +22037,13 @@ MonoBehaviour:
   zoomResponsiveness: 1
   zoomScale: 0.2
   enablePan: 1
-  panSpeed: 8
+  panSpeed: 0.5
   keepNearModel: 1
-  panLeashRadiuses: 4
+  panLeashRadiuses: 2.5
   autoAdjustClipPlanes: 1
+  clampDistanceToModel: 1
+  minDistanceMultiplier: 0.8
+  maxDistanceMultiplier: 8
   respectUILock: 1
   lockPanels:
   - {fileID: 1898543799}
@@ -22131,7 +22132,7 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.3
+  near clip plane: 0.1
   far clip plane: 1000
   field of view: 60
   orthographic: 0
@@ -25304,7 +25305,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1638234420
 RectTransform:
   m_ObjectHideFlags: 0

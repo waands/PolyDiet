@@ -25,7 +25,7 @@ public class CompareSplitView : MonoBehaviour
     public TMPro.TextMeshProUGUI labelRight;
 
     [Header("Edge")]
-    [Range(0f, 0.05f)] public float feather = 0.02f;
+    [Range(0f, 0.05f)] public float feather = 0f; // Zero para divisão totalmente brusca (sem smoothstep)
 
     [Header("Input Lock")]
     public bool lockCameraWhileDragging = true;
@@ -224,31 +224,80 @@ public class CompareSplitView : MonoBehaviour
 
     void UpdateSplitUI()
     {
-        float sliderValue = splitSlider ? splitSlider.value : 0.5f;
-        Debug.Log($"[CompareSplitView] UpdateSplitUI: slider={sliderValue}, material={_mat != null}, splitLine={splitLine != null}");
+        if (!splitSlider || !compositeImage) return;
         
-        if (_mat && splitSlider)
+        float sliderValue = splitSlider.value;
+        
+        // Calcula a posição real do slider em coordenadas de tela
+        // O slider tem width fixo (900) e pode estar deslocado na tela
+        RectTransform sliderRect = splitSlider.GetComponent<RectTransform>();
+        RectTransform imageRect = compositeImage.rectTransform;
+        
+        if (sliderRect && imageRect)
         {
-            _mat.SetFloat("_Split", sliderValue);
-            _mat.SetFloat("_Feather", feather);
-            Debug.Log($"[CompareSplitView] Material updated: Split={sliderValue}, Feather={feather}");
+            // Converte posições para espaço de tela (screen space)
+            Canvas canvas = compositeImage.canvas;
+            Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            
+            // Pega os cantos do slider em screen space
+            Vector3[] sliderCorners = new Vector3[4];
+            sliderRect.GetWorldCorners(sliderCorners);
+            
+            // Pega os cantos da imagem em screen space  
+            Vector3[] imageCorners = new Vector3[4];
+            imageRect.GetWorldCorners(imageCorners);
+            
+            // Calcula limites do slider e da imagem em coordenadas de tela
+            float sliderLeft = sliderCorners[0].x;
+            float sliderRight = sliderCorners[2].x;
+            float sliderWidth = sliderRight - sliderLeft;
+            
+            float imageLeft = imageCorners[0].x;
+            float imageRight = imageCorners[2].x;
+            float imageWidth = imageRight - imageLeft;
+            
+            // Posição absoluta do handle do slider
+            float handlePosX = sliderLeft + (sliderWidth * sliderValue);
+            
+            // Converte para coordenada normalizada (0-1) no espaço da imagem
+            float normalizedX = (handlePosX - imageLeft) / imageWidth;
+            normalizedX = Mathf.Clamp01(normalizedX);
+            
+            // Atualiza shader com a posição correta
+            if (_mat)
+            {
+                _mat.SetFloat("_Split", normalizedX);
+                _mat.SetFloat("_Feather", feather);
+            }
+            
+            // Alinha linha divisória na mesma posição
+            if (splitLine)
+            {
+                splitLine.SetParent(imageRect, false);
+                splitLine.anchorMin = new Vector2(normalizedX, 0f);
+                splitLine.anchorMax = new Vector2(normalizedX, 1f);
+                splitLine.anchoredPosition = Vector2.zero;
+                splitLine.sizeDelta = new Vector2(2f, 0f);
+            }
+            
+            // Debug detalhado
+            // Debug.Log($"[Split] Slider: {sliderValue:F3} | HandleX: {handlePosX:F1} | ImageNormalized: {normalizedX:F3}");
         }
         else
         {
-            Debug.LogWarning($"[CompareSplitView] Cannot update material: _mat={_mat != null}, splitSlider={splitSlider != null}");
-        }
-        
-        if (splitLine && compositeImage)
-        {
-            // alinha a linha visual ao mesmo percentual do corte
-            splitLine.anchorMin = new Vector2(sliderValue, 0f);
-            splitLine.anchorMax = new Vector2(sliderValue, 1f);
-            splitLine.anchoredPosition = Vector2.zero;
-            Debug.Log($"[CompareSplitView] Split line positioned at {sliderValue}");
-        }
-        else
-        {
-            Debug.LogWarning($"[CompareSplitView] Cannot update split line: splitLine={splitLine != null}, compositeImage={compositeImage != null}");
+            // Fallback: usa valor direto do slider (comportamento antigo)
+            if (_mat)
+            {
+                _mat.SetFloat("_Split", sliderValue);
+                _mat.SetFloat("_Feather", feather);
+            }
+            
+            if (splitLine)
+            {
+                splitLine.anchorMin = new Vector2(sliderValue, 0f);
+                splitLine.anchorMax = new Vector2(sliderValue, 1f);
+                splitLine.anchoredPosition = Vector2.zero;
+            }
         }
     }
 

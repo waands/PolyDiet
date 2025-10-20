@@ -235,7 +235,7 @@ public class ModelViewer : MonoBehaviour
         }
     }
 
-    // Duplica a escala de modelos muito pequenos
+    // Normaliza escala de modelos para um tamanho padrão visível
     private void NormalizeModelScale(GameObject container)
     {
         if (container == null) return;
@@ -251,18 +251,27 @@ public class ModelViewer : MonoBehaviour
         // Tamanho atual do modelo (maior dimensão)
         float currentSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
         
-        // Se menor que 0.5 unidades, duplica a escala (2x)
-        const float minSize = 0.5f;
-        
         if (currentSize < 1e-6f) return; // Evita divisão por zero
 
-        if (currentSize < minSize)
+        // Tamanho alvo: modelos devem ter aproximadamente 2 unidades na maior dimensão
+        // Isso garante visualização confortável independente do tamanho original
+        const float targetSize = 2.0f;
+        
+        // Calcula fator de escala necessário
+        float scaleFactor = targetSize / currentSize;
+        
+        // Aplica escala apenas se necessário (evita escalar modelos já no tamanho ideal)
+        // Tolerância de 20% para evitar ajustes desnecessários
+        const float tolerance = 0.2f;
+        if (Mathf.Abs(scaleFactor - 1.0f) > tolerance)
         {
-            // Simplesmente duplica a escala
-            float scaleFactor = 3.0f;
             container.transform.localScale = Vector3.one * scaleFactor;
-            UDebug.Log($"[AutoScale] Modelo pequeno detectado (tamanho: {currentSize:F4}). " +
-                      $"Duplicando escala (2x) → novo tamanho: {currentSize * scaleFactor:F4}");
+            UDebug.Log($"[AutoScale] Modelo normalizado: tamanho original {currentSize:F4} → " +
+                      $"tamanho final {targetSize:F4} (escala: {scaleFactor:F3}x)");
+        }
+        else
+        {
+            UDebug.Log($"[AutoScale] Modelo já está no tamanho ideal ({currentSize:F4}), sem ajuste necessário");
         }
     }
 
