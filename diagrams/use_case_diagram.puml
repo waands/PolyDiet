@@ -1,0 +1,153 @@
+@startuml PolyDiet - Diagrama de Casos de Uso
+
+!define RECTANGLE_STYLE #E8F5E9
+!define ACTOR_STYLE #2196F3
+
+title Diagrama de Casos de Uso - PolyDiet
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+' Atores
+actor "Pesquisador" as researcher <<Human>>
+actor "Sistema Unity" as unity <<System>>
+actor "Ferramentas CLI" as cli <<External>>
+
+rectangle "Sistema PolyDiet" RECTANGLE_STYLE {
+  
+  ' Casos de uso de Carregamento
+  package "Gerenciamento de Modelos" {
+    usecase "Carregar Modelo 3D" as UC1
+    usecase "Importar OBJ" as UC2
+    usecase "Importar GLB" as UC3
+    usecase "Visualizar Modelo" as UC4
+  }
+  
+  ' Casos de uso de Conversão
+  package "Conversão de Formato" {
+    usecase "Converter OBJ para GLB" as UC5
+    usecase "Validar Arquivo GLTF" as UC6
+  }
+  
+  ' Casos de uso de Compressão
+  package "Compressão de Modelos" {
+    usecase "Comprimir com Draco" as UC7
+    usecase "Comprimir com Meshopt" as UC8
+    usecase "Configurar Nível de Compressão" as UC9
+  }
+  
+  ' Casos de uso de Comparação
+  package "Comparação Visual" {
+    usecase "Ativar Modo Split-View" as UC10
+    usecase "Comparar Duas Variantes" as UC11
+    usecase "Ajustar Divisão Visual" as UC12
+    usecase "Sincronizar Câmeras" as UC13
+  }
+  
+  ' Casos de uso de Benchmark
+  package "Coleta de Métricas" {
+    usecase "Executar Benchmark" as UC14
+    usecase "Medir Tempo de Carregamento" as UC15
+    usecase "Medir FPS" as UC16
+    usecase "Medir Uso de Memória" as UC17
+    usecase "Salvar Métricas em CSV" as UC18
+  }
+  
+  ' Casos de uso de Relatórios
+  package "Geração de Relatórios" {
+    usecase "Gerar Relatório HTML" as UC19
+    usecase "Gerar Gráficos PNG" as UC20
+    usecase "Exportar para PDF" as UC21
+    usecase "Exportar para JSON" as UC22
+    usecase "Calcular Estatísticas" as UC23
+  }
+  
+  ' Casos de uso de Navegação
+  package "Controle de Câmera" {
+    usecase "Orbitar Câmera" as UC24
+    usecase "Zoom (Scroll)" as UC25
+    usecase "Enquadrar Modelo" as UC26
+  }
+}
+
+' Relacionamentos Pesquisador
+researcher --> UC1
+researcher --> UC2
+researcher --> UC5
+researcher --> UC7
+researcher --> UC8
+researcher --> UC9
+researcher --> UC10
+researcher --> UC11
+researcher --> UC12
+researcher --> UC14
+researcher --> UC19
+researcher --> UC24
+researcher --> UC25
+researcher --> UC26
+
+' Relacionamentos Sistema Unity
+unity --> UC4
+unity --> UC15
+unity --> UC16
+unity --> UC17
+unity --> UC18
+unity --> UC13
+
+' Relacionamentos Ferramentas CLI
+cli --> UC5
+cli --> UC7
+cli --> UC8
+cli --> UC6
+
+' Relacionamentos Include
+UC1 ..> UC3 : <<include>>
+UC1 ..> UC4 : <<include>>
+UC2 ..> UC5 : <<include>>
+UC5 ..> UC6 : <<include>>
+UC7 ..> UC6 : <<include>>
+UC8 ..> UC6 : <<include>>
+UC11 ..> UC10 : <<include>>
+UC11 ..> UC13 : <<include>>
+UC12 ..> UC10 : <<include>>
+UC14 ..> UC15 : <<include>>
+UC14 ..> UC16 : <<include>>
+UC14 ..> UC17 : <<include>>
+UC14 ..> UC18 : <<include>>
+UC19 ..> UC20 : <<include>>
+UC19 ..> UC23 : <<include>>
+UC21 ..> UC19 : <<extend>>
+UC22 ..> UC19 : <<extend>>
+
+' Relacionamentos Extend
+UC9 ..> UC7 : <<extend>>
+UC9 ..> UC8 : <<extend>>
+UC26 ..> UC24 : <<extend>>
+
+note right of UC14
+  3 execuções por variante
+  5 segundos de coleta FPS
+  Sem warm-up
+end note
+
+note right of UC7
+  Nível de compressão padrão: 5
+  Range: 1-10
+  Usa gltf-transform
+end note
+
+note right of UC8
+  Flags: -cc (padrão)
+  Usa gltfpack
+end note
+
+note right of UC19
+  Processa CSV com pandas
+  Gera 8 gráficos PNG
+  Calcula trade-offs
+end note
+
+@enduml
+
+

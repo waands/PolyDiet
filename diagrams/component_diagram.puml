@@ -1,0 +1,229 @@
+@startuml PolyDiet - Diagrama de Componentes
+
+!define COMPONENT_STYLE #E3F2FD
+!define INTERFACE_STYLE #FFF9C4
+!define DATABASE_STYLE #F3E5F5
+
+title Diagrama de Componentes - PolyDiet
+
+skinparam component {
+  BackgroundColor COMPONENT_STYLE
+  BorderColor #1976D2
+  FontSize 12
+}
+
+skinparam interface {
+  BackgroundColor INTERFACE_STYLE
+  BorderColor #F57C00
+}
+
+skinparam database {
+  BackgroundColor DATABASE_STYLE
+  BorderColor #7B1FA2
+}
+
+' Camada de Apresentação (Unity UI)
+package "Apresentação (Unity UI)" {
+  component [HUDController] as HUD
+  component [CompareSplitView] as SplitView
+  component [MetricsDashboard] as Dashboard
+  component [WizardUI] as Wizard
+}
+
+' Camada de Visualização
+package "Visualização 3D" {
+  component [ModelViewer] as Viewer
+  component [SimpleOrbitCamera] as Camera
+  component [CameraPoseFollower] as Follower
+  
+  interface "ICamera" as ICam
+  Camera -up- ICam
+  Follower -up- ICam
+}
+
+' Camada de Carregamento
+package "Gerenciamento de Modelos" {
+  component [ModelLoader] as Loader
+  component [GLTFValidator] as Validator
+  component [CompareLoader] as CompLoader
+  
+  interface "ILoader" as ILoad
+  Loader -up- ILoad
+}
+
+' Camada de Conversão
+package "Conversão de Formato" {
+  component [ConversionManager] as ConvMgr
+  component [Obj2GltfStrategy] as Obj2Gltf
+  component [GltfTransformStrategy] as GltfTrans
+  component [SimpleConversionStrategy] as SimpleConv
+  
+  interface "IConversionStrategy" as IConv
+  Obj2Gltf -up- IConv
+  GltfTrans -up- IConv
+  SimpleConv -up- IConv
+}
+
+' Camada de Compressão
+package "Compressão" {
+  component [CompressionManager] as CompMgr
+  component [DracoCompressor] as Draco
+  component [MeshoptCompressor] as Meshopt
+  
+  interface "ICompressor" as IComp
+  Draco .up.|> IComp
+  Meshopt .up.|> IComp
+}
+
+' Camada de Métricas
+package "Coleta de Métricas" {
+  component [Metrics] as Metrics #FFE0B2
+  component [MetricsStore] as Store
+  component [MetricsConfig] as Config
+  component [MetricsAggregator] as Aggregator
+  
+  interface "IMetricsCollector" as IMet
+  Metrics -up- IMet
+}
+
+' Camada de Relatórios (Python)
+package "Geração de Relatórios (Python)" <<External>> {
+  component [simple_report_generator.py] as ReportGen #C8E6C9
+  component [ReportRunner] as Runner
+  
+  interface "IReportGenerator" as IReport
+  ReportGen -up- IReport
+}
+
+' Ferramentas Externas
+package "Ferramentas CLI" <<External>> {
+  component [gltf-transform] as GltfTool #FFECB3
+  component [gltfpack] as Meshpack #FFECB3
+  component [obj2gltf] as ObjTool #FFECB3
+  component [Chromium] as Chrome #FFECB3
+}
+
+' Utilitários
+package "Utilitários" {
+  component [ProcessRunner] as ProcRunner
+  component [ToolDetector] as ToolDet
+  component [CrossPlatformHelper] as CrossPlat
+  component [UIInputLock] as InputLock
+}
+
+' Armazenamento
+database "StreamingAssets" as Assets {
+  folder "Models/{name}" {
+    file "model.glb" as GLB
+    folder "benchmark" {
+      file "benchmarks.csv" as CSV
+      folder "images" {
+        file "bars_*.png" as PNG
+      }
+      file "report.html" as HTML
+      file "report.pdf" as PDF
+      file "data.json" as JSON
+    }
+  }
+}
+
+' Relacionamentos UI -> Core
+HUD --> Viewer : controls
+HUD --> SplitView : toggle compare
+HUD --> Metrics : start benchmark
+Dashboard --> Store : read metrics
+Wizard --> ConvMgr : request conversion
+Wizard --> CompMgr : request compression
+
+' Relacionamentos Visualização
+Viewer --> Loader : load model
+Viewer --> Camera : camera control
+SplitView --> Viewer : dual render
+SplitView --> Follower : sync cameras
+SplitView --> InputLock : lock input
+
+' Relacionamentos Carregamento
+Loader --> Validator : validate
+Loader --> Assets : read GLB
+CompLoader --> Loader : load variant A/B
+
+' Relacionamentos Conversão
+ConvMgr --> IConv : use strategy
+Obj2Gltf --> ObjTool : execute
+Obj2Gltf --> ProcRunner : run process
+GltfTrans --> GltfTool : execute
+GltfTrans --> ProcRunner : run process
+ConvMgr --> ToolDet : detect tools
+ConvMgr --> Validator : validate output
+
+' Relacionamentos Compressão
+CompMgr --> IComp : use compressor
+Draco --> GltfTool : execute
+Draco --> ProcRunner : run process
+Meshopt --> Meshpack : execute
+Meshopt --> ProcRunner : run process
+CompMgr --> ToolDet : detect tools
+CompMgr --> Validator : validate output
+
+' Relacionamentos Métricas
+Metrics --> Store : save metrics
+Metrics --> Config : read config
+Metrics --> CSV : write CSV
+Store --> Aggregator : aggregate data
+Metrics --> CrossPlat : file paths
+
+' Relacionamentos Relatórios
+Runner --> ReportGen : execute Python
+ReportGen --> CSV : read data
+ReportGen --> PNG : generate charts
+ReportGen --> HTML : generate report
+ReportGen --> Chrome : convert to PDF
+ReportGen --> JSON : export data
+
+' Relacionamentos Utilitários
+ProcRunner --> CrossPlat : cross-platform exec
+ToolDet --> CrossPlat : find executables
+
+' Notas
+note right of Metrics
+  **Singleton**
+  Coleta automática de:
+  - Load time (Stopwatch)
+  - FPS (unscaledDeltaTime)
+  - Memory (Profiler API)
+  - File size (FileInfo)
+end note
+
+note right of ReportGen
+  **Python Script**
+  Bibliotecas:
+  - pandas, numpy
+  - plotly (gráficos)
+  - subprocess (PDF)
+end note
+
+note right of CompMgr
+  **Níveis de Compressão:**
+  Draco: 1-10 (padrão 5)
+  Meshopt: -c, -cc, -cc -si
+end note
+
+note bottom of Assets
+  **Estrutura de Dados:**
+  CSV append-only
+  Run ID agrupa sessão
+  3 execuções por variante
+  5s de janela FPS
+end note
+
+note left of ConvMgr
+  **Ordem de Estratégias:**
+  1. obj2gltf
+  2. gltf-transform
+  3. SimpleConversion
+  Fallback automático
+end note
+
+@enduml
+
+
