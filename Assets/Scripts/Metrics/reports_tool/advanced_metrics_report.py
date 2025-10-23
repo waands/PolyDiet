@@ -36,9 +36,9 @@ CONFIG = {
 try:
     import pandas as pd
     import numpy as np
-    print("[py] ✓ pandas e numpy carregados")
+    print("[py] pandas e numpy carregados")
 except ImportError as e:
-    print(f"[py] ❌ Erro ao carregar pandas/numpy: {e}")
+    print(f"[py] Erro ao carregar pandas/numpy: {e}")
     print("[py] Instale com: pip install pandas numpy")
     sys.exit(1)
 
@@ -46,9 +46,9 @@ try:
     import plotly.graph_objs as go
     import plotly.io as pio
     from plotly.subplots import make_subplots
-    print("[py] ✓ plotly carregado")
+    print("[py] plotly carregado")
 except ImportError as e:
-    print(f"[py] ❌ Erro ao carregar plotly: {e}")
+    print(f"[py] Erro ao carregar plotly: {e}")
     print("[py] Instale com: pip install plotly")
     sys.exit(1)
 
@@ -138,14 +138,24 @@ def load_multiple_csvs(csv_paths):
     dfs = []
     for path in csv_paths:
         try:
+            if not os.path.exists(path):
+                print(f"[py] AVISO: Arquivo não encontrado: {path}")
+                continue
+            
             df = pd.read_csv(path)
+            if len(df) == 0:
+                print(f"[py] AVISO: Arquivo CSV vazio: {path}")
+                continue
+                
             dfs.append(df)
             print(f"[py] CSV carregado: {path} ({len(df)} linhas)")
         except Exception as e:
-            print(f"[py] ⚠️ Erro ao carregar {path}: {e}")
+            print(f"[py] Erro ao carregar {path}: {e}")
     
     if not dfs:
-        raise ValueError("Nenhum CSV foi carregado com sucesso")
+        print("[py] ERRO: Nenhum CSV foi carregado com sucesso")
+        print("[py] DICA: Execute os testes de benchmark primeiro para gerar dados")
+        raise ValueError("Nenhum CSV foi carregado com sucesso. Execute os testes de benchmark primeiro.")
     
     combined_df = pd.concat(dfs, ignore_index=True)
     print(f"[py] Total de linhas combinadas: {len(combined_df)}")
@@ -164,7 +174,7 @@ def parse_file_info(file_info_list):
                 file_infos.append(file_info)
                 print(f"[py] File info: {variant} = {file_info.size_mb:.2f} MB")
         except Exception as e:
-            print(f"[py] ⚠️ Erro ao parsear file-info '{info_str}': {e}")
+            print(f"[py] Erro ao parsear file-info '{info_str}': {e}")
     
     return file_infos
 
@@ -181,7 +191,7 @@ def compare_variants(df, variants, base_variant="original"):
     # Calcula médias para a variante base
     base_data = df[df['variant'] == base_variant]
     if len(base_data) == 0:
-        print(f"[py] ⚠️ Variante base '{base_variant}' não encontrada")
+        print(f"[py] Variante base '{base_variant}' não encontrada")
         return comparisons
     
     for metric in metrics:
@@ -285,6 +295,103 @@ def calculate_compression_ratios(file_infos):
             }
     
     return ratios
+
+
+def calculate_variant_scores(df, variants, file_infos):
+    """
+    Calcula pontuação para cada variante baseada em múltiplos critérios
+    Retorna dict com scores e a variante recomendada
+    """
+    scores = {}
+    
+    # Pesos para cada métrica (quanto maior, mais importante)
+    weights = {
+        "fps_avg": 0.25,      # Performance média é importante
+        "fps_min": 0.20,      # Performance mínima também importa
+        "fps_1pc": 0.15,      # 1% low é relevante para consistência
+        "load_ms": 0.20,      # Tempo de carregamento
+        "mem_mb": 0.10,       # Uso de memória
+        "file_size": 0.10     # Tamanho do arquivo
+    }
+    
+    # Normalizar valores para cada métrica (0-100 scale)
+    def normalize(values, inverse=False):
+        """Normaliza valores para escala 0-100. Se inverse=True, menor é melhor"""
+        if len(values) == 0:
+            return {}
+        min_val = min(values.values())
+        max_val = max(values.values())
+        if max_val == min_val:
+            return {k: 50 for k in values.keys()}
+        
+        if inverse:
+            return {k: 100 * (max_val - v) / (max_val - min_val) for k, v in values.items()}
+        else:
+            return {k: 100 * (v - min_val) / (max_val - min_val) for k, v in values.items()}
+    
+    # Coletar valores médios para cada variante
+    metrics_by_variant = {v: {} for v in variants}
+    
+    for variant in variants:
+        variant_data = df[df['variant'] == variant]
+        if len(variant_data) > 0:
+            metrics_by_variant[variant]['fps_avg'] = variant_data['fps_avg'].mean()
+            metrics_by_variant[variant]['fps_min'] = variant_data['fps_min'].mean()
+            
+            # fps_1pc pode não existir em todos os dados
+            if 'fps_1pc' in variant_data.columns:
+                metrics_by_variant[variant]['fps_1pc'] = variant_data['fps_1pc'].mean()
+            else:
+                metrics_by_variant[variant]['fps_1pc'] = variant_data['fps_min'].mean()
+            
+            metrics_by_variant[variant]['load_ms'] = variant_data['load_ms'].mean()
+            metrics_by_variant[variant]['mem_mb'] = variant_data['mem_mb'].mean()
+    
+    # Adicionar tamanho de arquivo
+    for file_info in file_infos:
+        if file_info.variant in metrics_by_variant:
+            metrics_by_variant[file_info.variant]['file_size'] = file_info.size_mb
+    
+    # Normalizar cada métrica
+    normalized = {}
+    for metric in ['fps_avg', 'fps_min', 'fps_1pc', 'load_ms', 'mem_mb', 'file_size']:
+        values = {v: m.get(metric, 0) for v, m in metrics_by_variant.items() if metric in m}
+        if values:
+            # FPS: maior é melhor; Load, Mem, File: menor é melhor
+            inverse = metric in ['load_ms', 'mem_mb', 'file_size']
+            normalized[metric] = normalize(values, inverse=inverse)
+    
+    # Calcular score final para cada variante
+    for variant in variants:
+        if variant not in metrics_by_variant:
+            continue
+        
+        score = 0
+        score_details = {}
+        
+        for metric, weight in weights.items():
+            if metric in normalized and variant in normalized[metric]:
+                metric_score = normalized[metric][variant] * weight
+                score += metric_score
+                score_details[metric] = {
+                    'normalized': normalized[metric][variant],
+                    'weight': weight,
+                    'contribution': metric_score
+                }
+        
+        scores[variant] = {
+            'total_score': score,
+            'details': score_details,
+            'raw_values': metrics_by_variant[variant]
+        }
+    
+    # Determinar variante recomendada
+    recommended = max(scores.items(), key=lambda x: x[1]['total_score'])[0] if scores else None
+    
+    return {
+        'scores': scores,
+        'recommended': recommended
+    }
 
 
 def calculate_all_stats(df, variants):
@@ -527,6 +634,175 @@ def create_file_size_chart(file_infos, color_map):
     return fig
 
 
+def create_line_chart(df, variants, metric, title, unit, color_map):
+    """Cria gráfico de linha para comparação de evolução"""
+    fig = go.Figure()
+    
+    df_sorted = df.sort_values('timestamp')
+    
+    for variant in variants:
+        variant_data = df_sorted[df_sorted['variant'] == variant]
+        if len(variant_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=list(range(len(variant_data))),
+                y=variant_data[metric],
+                mode='lines+markers',
+                name=variant,
+                line=dict(color=color_map.get(variant, '#999'), width=3),
+                marker=dict(size=8, symbol='circle'),
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"Teste: %{{x}}<br>" +
+                            f"{metric}: %{{y:.2f}} {unit}<extra></extra>"
+            ))
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text="Número do Teste", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400,
+        hovermode='x unified'
+    )
+    
+    return fig
+
+
+def create_area_chart(df, variants, metric, title, unit, color_map):
+    """Cria gráfico de área para visualização de distribuição"""
+    fig = go.Figure()
+    
+    df_sorted = df.sort_values('timestamp')
+    
+    for variant in variants:
+        variant_data = df_sorted[df_sorted['variant'] == variant]
+        if len(variant_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=list(range(len(variant_data))),
+                y=variant_data[metric],
+                mode='lines',
+                name=variant,
+                fill='tonexty' if variant != variants[0] else 'tozeroy',
+                line=dict(color=color_map.get(variant, '#999'), width=2),
+                fillcolor=f"rgba({int(color_map.get(variant, '#999999')[1:3], 16)}, {int(color_map.get(variant, '#999999')[3:5], 16)}, {int(color_map.get(variant, '#999999')[5:7], 16)}, 0.3)",
+                hovertemplate=f"<b>{variant}</b><br>" +
+                            f"Teste: %{{x}}<br>" +
+                            f"{metric}: %{{y:.2f}} {unit}<extra></extra>"
+            ))
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        xaxis=dict(title=dict(text="Número do Teste", font=dict(size=14))),
+        yaxis=dict(title=dict(text=unit, font=dict(size=14))),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=50, r=50, t=60, b=50),
+        height=400,
+        hovermode='x unified'
+    )
+    
+    return fig
+
+
+def create_multi_metric_line_chart(df, variants, metrics_config, title, color_map):
+    """Cria gráfico de linhas com múltiplas métricas normalizadas"""
+    from plotly.subplots import make_subplots
+    
+    # Criar subplots para cada métrica
+    fig = make_subplots(
+        rows=len(metrics_config), 
+        cols=1,
+        subplot_titles=[config['title'] for config in metrics_config],
+        vertical_spacing=0.1
+    )
+    
+    df_sorted = df.sort_values('timestamp')
+    
+    for idx, config in enumerate(metrics_config, 1):
+        metric = config['metric']
+        unit = config['unit']
+        
+        for variant in variants:
+            variant_data = df_sorted[df_sorted['variant'] == variant]
+            if len(variant_data) > 0:
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(range(len(variant_data))),
+                        y=variant_data[metric],
+                        mode='lines+markers',
+                        name=variant,
+                        line=dict(color=color_map.get(variant, '#999'), width=2),
+                        marker=dict(size=6),
+                        showlegend=(idx == 1),  # Mostrar legenda apenas no primeiro subplot
+                        hovertemplate=f"<b>{variant}</b><br>Teste: %{{x}}<br>{metric}: %{{y:.2f}} {unit}<extra></extra>"
+                    ),
+                    row=idx, col=1
+                )
+        
+        fig.update_yaxis(title_text=unit, row=idx, col=1)
+    
+    fig.update_xaxes(title_text="Número do Teste", row=len(metrics_config), col=1)
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#2c3e50')),
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        height=300 * len(metrics_config),
+        hovermode='x unified'
+    )
+    
+    return fig
+
+
+def create_radar_chart(score_data, variants, color_map):
+    """Cria gráfico radar para comparação de scores"""
+    fig = go.Figure()
+    
+    # Métricas para o radar
+    metrics = ['fps_avg', 'fps_min', 'fps_1pc', 'load_ms', 'mem_mb', 'file_size']
+    metric_labels = ['FPS Médio', 'FPS Mínimo', 'FPS 1%', 'Carregamento', 'Memória', 'Tamanho']
+    
+    for variant in variants:
+        if variant in score_data['scores']:
+            values = []
+            for metric in metrics:
+                if metric in score_data['scores'][variant]['details']:
+                    values.append(score_data['scores'][variant]['details'][metric]['normalized'])
+                else:
+                    values.append(0)
+            
+            # Fechar o polígono
+            values.append(values[0])
+            
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=metric_labels + [metric_labels[0]],
+                name=variant,
+                fill='toself',
+                line=dict(color=color_map.get(variant, '#999'), width=2),
+                fillcolor=f"rgba({int(color_map.get(variant, '#999999')[1:3], 16)}, {int(color_map.get(variant, '#999999')[3:5], 16)}, {int(color_map.get(variant, '#999999')[5:7], 16)}, 0.3)"
+            ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100]
+            )
+        ),
+        title=dict(text="Comparação Multidimensional (Score Normalizado)", font=dict(size=16, color='#2c3e50')),
+        template='plotly_white',
+        height=500,
+        showlegend=True
+    )
+    
+    return fig
+
+
 # =====================================================================
 # GERAÇÃO DE HTML
 # =====================================================================
@@ -539,6 +815,103 @@ def create_html_section(title, content):
         {content}
     </div>
     """
+
+
+def create_recommendation_section(score_data, variants):
+    """Cria seção de recomendação com ranking de variantes"""
+    if not score_data or 'scores' not in score_data or not score_data['scores']:
+        return ""
+    
+    recommended = score_data['recommended']
+    scores = score_data['scores']
+    
+    # Ordenar variantes por score
+    sorted_variants = sorted(scores.items(), key=lambda x: x[1]['total_score'], reverse=True)
+    
+    # Card de recomendação
+    rec_card = f"""
+    <div class="recommendation-banner">
+        <div class="recommendation-icon">&#9733;</div>
+        <div class="recommendation-content">
+            <h2>Variante Recomendada</h2>
+            <div class="recommended-variant">
+                <span class="variant-badge variant-{recommended} recommended-badge">{recommended.upper()}</span>
+                <span class="recommendation-score">Score: {scores[recommended]['total_score']:.1f}/100</span>
+            </div>
+            <p class="recommendation-text">
+                Baseado na análise de performance, tempo de carregamento, uso de memória e tamanho de arquivo.
+            </p>
+        </div>
+    </div>
+    """
+    
+    # Tabela de ranking
+    ranking_rows = []
+    for rank, (variant, data) in enumerate(sorted_variants, 1):
+        medal = ""
+        if rank == 1:
+            medal = '<span class="medal gold">&#9733; 1º</span>'
+        elif rank == 2:
+            medal = '<span class="medal silver">&#9733; 2º</span>'
+        elif rank == 3:
+            medal = '<span class="medal bronze">&#9733; 3º</span>'
+        else:
+            medal = f'<span class="medal">{rank}º</span>'
+        
+        is_recommended = variant == recommended
+        row_class = 'recommended-row' if is_recommended else ''
+        
+        # Detalhes do score
+        details_html = []
+        for metric, detail in data['details'].items():
+            metric_label = metric.replace('_', ' ').title()
+            contribution = detail['contribution']
+            normalized = detail['normalized']
+            details_html.append(
+                f'<div class="score-detail">'
+                f'<span class="score-metric">{metric_label}:</span> '
+                f'<span class="score-value">{normalized:.1f}/100 '
+                f'<small>({contribution:.1f} pts)</small></span>'
+                f'</div>'
+            )
+        
+        ranking_rows.append(f"""
+        <tr class="{row_class}">
+            <td>{medal}</td>
+            <td><span class="variant-badge variant-{variant}">{variant}</span></td>
+            <td class="score-cell">
+                <div class="score-bar-container">
+                    <div class="score-bar" style="width: {data['total_score']}%"></div>
+                    <span class="score-text">{data['total_score']:.1f}</span>
+                </div>
+            </td>
+            <td class="details-cell">
+                {''.join(details_html)}
+            </td>
+        </tr>
+        """)
+    
+    ranking_table = f"""
+    <div class="ranking-section">
+        <h3>Ranking Detalhado</h3>
+        <table class="ranking-table">
+            <thead>
+                <tr>
+                    <th>Posição</th>
+                    <th>Variante</th>
+                    <th>Score Total</th>
+                    <th>Detalhamento</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(ranking_rows)}
+            </tbody>
+        </table>
+    </div>
+    """
+    
+    combined = rec_card + ranking_table
+    return create_html_section("Recomendação e Ranking", combined)
 
 
 def create_executive_summary(model, df, variants, comparisons, file_infos):
@@ -618,9 +991,9 @@ def create_performance_comparison_table(comparisons):
         </div>
         """
     
-    fps_table = create_metric_table(fps_comparisons, "Performance FPS", "🎯")
-    load_table = create_metric_table(load_comparisons, "Tempo de Carregamento", "⏱️")
-    mem_table = create_metric_table(mem_comparisons, "Uso de Memória", "💾")
+    fps_table = create_metric_table(fps_comparisons, "Performance FPS", "")
+    load_table = create_metric_table(load_comparisons, "Tempo de Carregamento", "")
+    mem_table = create_metric_table(mem_comparisons, "Uso de Memória", "")
     
     combined_tables = f"""
     <div class="comparison-grid">
@@ -630,7 +1003,7 @@ def create_performance_comparison_table(comparisons):
     </div>
     """
     
-    return create_html_section("📊 Comparação de Performance", combined_tables)
+    return create_html_section("Comparação de Performance", combined_tables)
 
 
 def create_detailed_stats_tables(all_stats):
@@ -688,7 +1061,7 @@ def create_detailed_stats_tables(all_stats):
     </div>
     """
     
-    return create_html_section("📈 Estatísticas Detalhadas por Variante", combined_tables)
+    return create_html_section("Estatísticas Detalhadas por Variante", combined_tables)
 
 
 def create_file_info_section(file_infos, compression_ratios):
@@ -749,7 +1122,7 @@ def create_file_info_section(file_infos, compression_ratios):
     </div>
     """
     
-    return create_html_section("📁 Informações dos Arquivos", table)
+    return create_html_section("Informações dos Arquivos", table)
 
 
 def build_html(model, sections):
@@ -1005,6 +1378,165 @@ def build_html(model, sections):
             font-size: 12px;
         }}
         
+        .recommendation-banner {{
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            padding: 30px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin: 30px 0;
+            box-shadow: 0 10px 30px rgba(255, 215, 0, 0.3);
+        }}
+        
+        .recommendation-icon {{
+            font-size: 60px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }}
+        
+        .recommendation-content h2 {{
+            color: white;
+            margin: 0 0 15px 0;
+            font-size: 28px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }}
+        
+        .recommended-variant {{
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+        }}
+        
+        .recommended-badge {{
+            font-size: 24px !important;
+            padding: 10px 20px !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }}
+        
+        .recommendation-score {{
+            font-size: 22px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }}
+        
+        .recommendation-text {{
+            color: white;
+            margin: 10px 0 0 0;
+            font-size: 16px;
+            opacity: 0.95;
+        }}
+        
+        .ranking-section {{
+            margin: 30px 0;
+        }}
+        
+        .ranking-section h3 {{
+            font-size: 22px;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }}
+        
+        .ranking-table {{
+            width: 100%;
+        }}
+        
+        .ranking-table td {{
+            vertical-align: top;
+            padding: 20px 15px;
+        }}
+        
+        .recommended-row {{
+            background: linear-gradient(90deg, rgba(255,215,0,0.1) 0%, rgba(255,215,0,0.05) 100%);
+            border-left: 5px solid #FFD700;
+        }}
+        
+        .medal {{
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 18px;
+            white-space: nowrap;
+        }}
+        
+        .medal.gold {{
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: white;
+            box-shadow: 0 4px 10px rgba(255, 215, 0, 0.4);
+        }}
+        
+        .medal.silver {{
+            background: linear-gradient(135deg, #C0C0C0 0%, #A8A8A8 100%);
+            color: white;
+            box-shadow: 0 4px 10px rgba(192, 192, 192, 0.4);
+        }}
+        
+        .medal.bronze {{
+            background: linear-gradient(135deg, #CD7F32 0%, #B87333 100%);
+            color: white;
+            box-shadow: 0 4px 10px rgba(205, 127, 50, 0.4);
+        }}
+        
+        .score-cell {{
+            min-width: 200px;
+        }}
+        
+        .score-bar-container {{
+            position: relative;
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+        }}
+        
+        .score-bar {{
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50 0%, #45a049 100%);
+            transition: width 1s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+        }}
+        
+        .score-text {{
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+        }}
+        
+        .details-cell {{
+            font-size: 13px;
+        }}
+        
+        .score-detail {{
+            margin: 5px 0;
+            padding: 5px 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        
+        .score-metric {{
+            font-weight: bold;
+            color: #2c3e50;
+        }}
+        
+        .score-value {{
+            color: #4CAF50;
+            font-weight: bold;
+        }}
+        
         .timestamp {{
             color: #888;
             font-size: 14px;
@@ -1044,7 +1576,7 @@ def build_html(model, sections):
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Advanced Metrics Report</h1>
+            <h1>Advanced Metrics Report</h1>
             <div class="subtitle">{model}</div>
         </div>
         <div class="content">
@@ -1101,6 +1633,9 @@ def main():
     trends = analyze_temporal_evolution(df)
     compression_ratios = calculate_compression_ratios(file_infos)
     all_stats = calculate_all_stats(df, variants)
+    score_data = calculate_variant_scores(df, variants, file_infos)
+    
+    print(f"[py] Variante recomendada: {score_data.get('recommended', 'N/A')}")
     
     # Color map
     color_map = {
@@ -1116,43 +1651,82 @@ def main():
     # 1. Resumo Executivo
     sections.append(create_executive_summary(args.model, df, variants, comparisons, file_infos))
     
-    # 2. Informações de Arquivos
+    # 2. Recomendação e Ranking
+    sections.append(create_recommendation_section(score_data, variants))
+    
+    # 3. Gráfico Radar (Score Comparison)
+    fig_radar = create_radar_chart(score_data, variants, color_map)
+    sections.append(create_html_section("Análise Multidimensional", f'<div class="chart">{fig_radar.to_html(include_plotlyjs=False, div_id="radar_scores")}</div>'))
+    
+    # 4. Informações de Arquivos
     if file_infos:
         sections.append(create_file_info_section(file_infos, compression_ratios))
         fig = create_file_size_chart(file_infos, color_map)
         sections.append(create_html_section("Tamanho dos Arquivos", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="file_size")}</div>'))
     
-    # 3. Tabelas de Comparação Organizadas
+    # 5. Tabelas de Comparação Organizadas
     sections.append(create_performance_comparison_table(comparisons))
     
-    # 4. Estatísticas Detalhadas por Variante
+    # 6. Estatísticas Detalhadas por Variante
     sections.append(create_detailed_stats_tables(all_stats))
     
-    # 5. Gráficos de Barras
-    for metric, title, unit in [("load_ms", "Tempo de Carregamento", "ms"), 
-                                  ("mem_mb", "Memória (média)", "MB"),
-                                  ("fps_avg", "FPS (média)", "FPS")]:
+    # 7. Gráficos de Linha - Evolução de Métricas
+    print("[py] Criando gráficos de linha...")
+    for metric, title, unit in [("fps_avg", "Evolução de FPS Médio", "FPS"),
+                                  ("fps_min", "Evolução de FPS Mínimo", "FPS"),
+                                  ("load_ms", "Evolução do Tempo de Carregamento", "ms"),
+                                  ("mem_mb", "Evolução do Uso de Memória", "MB")]:
+        fig = create_line_chart(df, variants, metric, title, unit, color_map)
+        sections.append(create_html_section(title, f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"line_{metric}")}</div>'))
+    
+    # 8. Gráficos de Área
+    print("[py] Criando gráficos de área...")
+    for metric, title, unit in [("fps_avg", "Distribuição de FPS ao Longo dos Testes", "FPS"),
+                                  ("mem_mb", "Distribuição de Memória ao Longo dos Testes", "MB")]:
+        fig = create_area_chart(df, variants, metric, title, unit, color_map)
+        sections.append(create_html_section(f"{title} (Área)", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"area_{metric}")}</div>'))
+    
+    # 9. Gráfico Multi-Métrica
+    print("[py] Criando gráfico multi-métrica...")
+    metrics_config = [
+        {"metric": "fps_avg", "title": "FPS Médio", "unit": "FPS"},
+        {"metric": "fps_min", "title": "FPS Mínimo", "unit": "FPS"},
+        {"metric": "load_ms", "title": "Tempo de Carregamento", "unit": "ms"},
+        {"metric": "mem_mb", "title": "Uso de Memória", "unit": "MB"}
+    ]
+    fig_multi = create_multi_metric_line_chart(df, variants, metrics_config, "Evolução de Todas as Métricas", color_map)
+    sections.append(create_html_section("Painel de Métricas Integrado", f'<div class="chart">{fig_multi.to_html(include_plotlyjs=False, div_id="multi_metrics")}</div>'))
+    
+    # 10. Gráficos de Barras
+    for metric, title, unit in [("load_ms", "Tempo de Carregamento (Média)", "ms"), 
+                                  ("mem_mb", "Memória (Média)", "MB"),
+                                  ("fps_avg", "FPS (Média)", "FPS")]:
         fig = create_bar_chart(df, variants, metric, title, unit, color_map)
         sections.append(create_html_section(title, f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"bar_{metric}")}</div>'))
     
-    # 6. Box Plots
+    # 11. Box Plots
     for metric, title, unit in [("fps_avg", "Distribuição de FPS", "FPS"),
+                                  ("fps_min", "Distribuição de FPS Mínimo", "FPS"),
                                   ("load_ms", "Distribuição de Tempo de Carregamento", "ms")]:
         fig = create_box_plots(df, variants, metric, title, unit, color_map)
         sections.append(create_html_section(f"{title} (Box Plot)", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id=f"box_{metric}")}</div>'))
     
-    # 7. Scatter Plots
+    # 12. Scatter Plots
     fig = create_scatter_plot(df, variants, "load_ms", "fps_avg", "FPS vs Tempo de Carregamento", color_map)
     sections.append(create_html_section("Relação FPS vs Load Time", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="scatter_fps_load")}</div>'))
     
-    # 8. Heatmap
+    fig = create_scatter_plot(df, variants, "mem_mb", "fps_avg", "FPS vs Uso de Memória", color_map)
+    sections.append(create_html_section("Relação FPS vs Memória", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="scatter_fps_mem")}</div>'))
+    
+    # 13. Heatmap
     metrics_for_corr = ["load_ms", "mem_mb", "fps_avg", "fps_min", "fps_max"]
+    if 'fps_median' in df.columns:
+        metrics_for_corr.append("fps_median")
+    if 'fps_1pc' in df.columns:
+        metrics_for_corr.append("fps_1pc")
+    
     fig = create_heatmap(df, metrics_for_corr)
     sections.append(create_html_section("Correlação entre Métricas", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="heatmap")}</div>'))
-    
-    # 9. Evolução Temporal
-    fig = create_timeline_chart(df, variants, "fps_avg", "Evolução de FPS ao Longo do Tempo", "FPS", color_map)
-    sections.append(create_html_section("Evolução Temporal", f'<div class="chart">{fig.to_html(include_plotlyjs=False, div_id="timeline_fps")}</div>'))
     
     # Construir HTML
     html = build_html(args.model, sections)
@@ -1169,9 +1743,24 @@ def main():
         "timestamp": datetime.now().isoformat(),
         "file_infos": [f.to_dict() for f in file_infos],
         "compression_ratios": compression_ratios,
-        "comparisons": [{**c, "better": int(c["better"])} for c in comparisons],
+        "comparisons": [{**c, "better": int(c["better"])} for c in comparisons.values()],
         "all_stats": {v: {m: s.to_dict() for m, s in metrics.items()} for v, metrics in all_stats.items()},
-        "trends": [{**t, "improving": int(t["improving"])} for t in trends],
+        "trends": trends,
+        "score_data": {
+            "recommended": score_data.get('recommended'),
+            "scores": {
+                v: {
+                    "total_score": data['total_score'],
+                    "details": {
+                        m: {
+                            'normalized': d['normalized'],
+                            'weight': d['weight'],
+                            'contribution': d['contribution']
+                        } for m, d in data['details'].items()
+                    }
+                } for v, data in score_data.get('scores', {}).items()
+            }
+        },
         "total_tests": len(df),
         "variants": variants
     }
@@ -1283,11 +1872,11 @@ def main():
         file_size_chart.write_image(file_size_png_path, width=1600, height=800, scale=1)
         print(f"[py] PNG: {file_size_png_path}")
         
-        print("[py] ✓ Previews PNG gerados com sucesso!")
+        print("[py] Previews PNG gerados com sucesso!")
         
     except Exception as e:
-        print(f"[py] ⚠️ Erro ao gerar PNGs: {e}")
-        print("[py] ⚠️ Continuando sem previews PNG...")
+        print(f"[py] Erro ao gerar PNGs: {e}")
+        print("[py] Continuando sem previews PNG...")
     
     # PDF (se solicitado)
     if args.pdf:
@@ -1352,13 +1941,13 @@ def main():
             
             # Gerar PDF
             fig_combined.write_image(pdf_path, width=1200, height=800, scale=2)
-            print(f"[py] ✓ PDF gerado: {pdf_path}")
+            print(f"[py] PDF gerado: {pdf_path}")
             
         except Exception as e:
-            print(f"[py] ⚠️ Erro ao gerar PDF: {e}")
-            print(f"[py] ⚠️ Continuando sem PDF...")
+            print(f"[py] Erro ao gerar PDF: {e}")
+            print(f"[py] Continuando sem PDF...")
     
-    print("[py] ✓ Report gerado com sucesso!")
+    print("[py] Report gerado com sucesso!")
     return 0
 
 
@@ -1366,8 +1955,14 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        print(f"[py] ❌ Erro fatal: {e}")
+        print(f"[py] ========================================")
+        print(f"[py] ERRO FATAL")
+        print(f"[py] ========================================")
+        print(f"[py] {type(e).__name__}: {e}")
+        print(f"[py] ========================================")
         import traceback
+        print("[py] Traceback completo:")
         traceback.print_exc()
+        print(f"[py] ========================================")
         sys.exit(1)
 

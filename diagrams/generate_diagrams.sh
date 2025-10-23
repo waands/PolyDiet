@@ -114,3 +114,4 @@ ls -lh *.png *.svg *.pdf 2>/dev/null || echo "(nenhum arquivo gerado)"
 echo ""
 
 
+

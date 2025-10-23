@@ -15,7 +15,7 @@ public class ReportRunner : MonoBehaviour
     [Header("Paths")]
     [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha.")]
     public string pythonPath = ""; // se vazio, escolhemos automaticamente
-    [Tooltip("Caminho para o simple_report_generator.py")]
+    [Tooltip("Caminho para o script de relatório (deixe vazio para usar simple_report_generator.py)")]
     public string scriptPath = ""; // ex.: Application.dataPath + "/Scripts/Metrics/reports_tool/simple_report_generator.py"
     [Tooltip("Opcional: binário empacotado (PyInstaller). Se preenchido, ignora pythonPath/scriptPath.")]
     public string packagedExePath = ""; // ex.: Application.dataPath + "/../reports_tool/dist/metrics_report.exe"
@@ -155,11 +155,11 @@ public class ReportRunner : MonoBehaviour
         // Juntar todos os caminhos em uma única string, separados por espaço
         string allCsvPaths = string.Join(" ", csvPaths.Select(p => $"\"{p}\""));
 
-        // Escolher script (novo sistema simples)
+        // Escolher script (usa simple por padrão)
         string actualScriptPath = scriptPath;
         if (string.IsNullOrEmpty(actualScriptPath))
         {
-            // Usa script simples por padrão
+            // Usa script simple por padrão
             actualScriptPath = Path.Combine(Application.dataPath, "Scripts", "Metrics", "reports_tool", "simple_report_generator.py");
         }
         
@@ -360,5 +360,75 @@ public class ReportRunner : MonoBehaviour
         
         Application.OpenURL(_lastReportPath);
         Log($"[ReportRunner] Abrindo pasta: {_lastReportPath}");
+    }
+    
+    /// <summary>
+    /// Coleta informações dos arquivos GLB (tamanho e caminho) para passar ao advanced report
+    /// Formato: --file-info variant:sizeBytes:path
+    /// </summary>
+    private string CollectFileInfoArgs(string modelName)
+    {
+        string modelsRoot = Path.Combine(Application.streamingAssetsPath, "Models", modelName);
+        
+        if (!Directory.Exists(modelsRoot))
+        {
+            Log($"[Report] Pasta de modelos não encontrada: {modelsRoot}");
+            return "";
+        }
+        
+        string[] variants = { "original", "draco", "meshopt" };
+        List<string> fileInfos = new List<string>();
+        
+        foreach (string variant in variants)
+        {
+            string variantDir = Path.Combine(modelsRoot, variant);
+            if (!Directory.Exists(variantDir))
+                continue;
+            
+            // Procurar por model.glb ou qualquer .glb
+            string glbPath = Path.Combine(variantDir, "model.glb");
+            
+            if (!File.Exists(glbPath))
+            {
+                // Tentar encontrar qualquer .glb
+                var glbFiles = Directory.GetFiles(variantDir, "*.glb");
+                if (glbFiles.Length > 0)
+                {
+                    glbPath = glbFiles[0];
+                }
+                else
+                {
+                    continue; // Nenhum arquivo .glb encontrado nesta variante
+                }
+            }
+            
+            try
+            {
+                FileInfo fileInfo = new FileInfo(glbPath);
+                long sizeBytes = fileInfo.Length;
+                
+                // Formato: variant:sizeBytes:path
+                string fileInfoArg = $"{variant}:{sizeBytes}:{glbPath}";
+                fileInfos.Add(fileInfoArg);
+                
+                Log($"[Report] File info: {variant} = {sizeBytes} bytes ({fileInfo.Length / (1024.0 * 1024.0):F2} MB)");
+            }
+            catch (Exception ex)
+            {
+                Log($"<color=orange>[Report] Erro ao obter info do arquivo {glbPath}: {ex.Message}</color>");
+            }
+        }
+        
+        if (fileInfos.Count == 0)
+            return "";
+        
+        // Construir argumentos --file-info
+        string result = "";
+        foreach (string info in fileInfos)
+        {
+            result += $" --file-info \"{info}\"";
+        }
+        
+        return result;
     }
 }

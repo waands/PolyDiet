@@ -300,6 +300,7 @@ GameObject:
   - component: {fileID: 6881318372236157839}
   - component: {fileID: 8101998219532318277}
   - component: {fileID: 8330539512597941611}
+  - component: {fileID: 4348286603582889040}
   m_Layer: 5
   m_Name: ChipVariant
   m_TagString: Untagged
@@ -351,8 +352,8 @@ MonoBehaviour:
   m_Colors:
     m_NormalColor: {r: 0.9098039, g: 0.93333334, b: 0.9764706, a: 1}
     m_HighlightedColor: {r: 0.8666667, g: 0.9098039, b: 1, a: 1}
-    m_PressedColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 1}
-    m_SelectedColor: {r: 0.23137255, g: 0.50980395, b: 0.9647059, a: 1}
+    m_PressedColor: {r: 0.109642304, g: 0.754717, b: 0.0035599943, a: 1}
+    m_SelectedColor: {r: 0.9098039, g: 0.93333334, b: 0.9764706, a: 1}
     m_DisabledColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 0.5019608}
     m_ColorMultiplier: 1
     m_FadeDuration: 0.1
@@ -434,3 +435,18 @@ MonoBehaviour:
   m_FlexibleWidth: -1
   m_FlexibleHeight: -1
   m_LayoutPriority: 1
+--- !u!114 &4348286603582889040
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8538603467137033441}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 363032819a4f012e8a8e591cb143c97f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChipToggleSkin
+  bg: {fileID: 8171385550535948028}
+  label: {fileID: 1253511793620892990}
+  checkmark: {fileID: 5171334741497211662}

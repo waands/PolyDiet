@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório de Performance - xyzrgb_dragon</title>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f6fa;
+            color: #2c3e50;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 40px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #7f8c8d;
+            margin-top: 25px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: white;
+            border: none;
+            margin: 0;
+        }
+        .timestamp {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .summary-table th {
+            background: #34495e;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        .summary-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        .summary-table tr:hover {
+            background: #f8f9fa;
+        }
+        .metric-section {
+            background: white;
+            padding: 25px;
+            margin: 30px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .metric-description {
+            background: #e8f4f8;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .metric-formula {
+            background: #fff3cd;
+            padding: 15px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        .metric-interpretation {
+            background: #d4edda;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .chart-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .chart-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 0.9em;
+            background: white;
+        }
+        .data-table th {
+            background: #95a5a6;
+            color: white;
+            padding: 8px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+        }
+        .data-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #ddd;
+        }
+        .data-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        .variant-original { color: #3498db; font-weight: bold; }
+        .variant-draco { color: #e74c3c; font-weight: bold; }
+        .variant-meshopt { color: #2ecc71; font-weight: bold; }
+        .comparison-positive { color: #27ae60; font-weight: bold; }
+        .comparison-negative { color: #e74c3c; font-weight: bold; }
+        .details {
+            cursor: pointer;
+            user-select: none;
+        }
+        .details-content {
+            display: none;
+            margin-top: 10px;
+        }
+        .details.open .details-content {
+            display: block;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        .badge-good { background: #d4edda; color: #155724; }
+        .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-bad { background: #f8d7da; color: #721c24; }
+        
+        /* Estilos para descrições de seção */
+        .section-description {
+            font-size: 1.05em;
+            color: #7f8c8d;
+            margin: 15px 0 25px 0;
+            line-height: 1.6;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #3498db;
+        }
+        
+        /* Estilos para cards de decisão */
+        .decision-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+            margin: 30px 0;
+        }
+        
+        .decision-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .decision-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        
+        .decision-card-excellent {
+            border: 3px solid #27ae60;
+        }
+        
+        .decision-card-good {
+            border: 3px solid #2ecc71;
+        }
+        
+        .decision-card-warning {
+            border: 3px solid #f39c12;
+        }
+        
+        .decision-card-bad {
+            border: 3px solid #e74c3c;
+        }
+        
+        .decision-card-header {
+            padding: 20px;
+            color: white;
+            position: relative;
+        }
+        
+        .decision-card-header h3 {
+            margin: 0;
+            color: white;
+            font-size: 1.5em;
+        }
+        
+        .recommendation-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.25);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .decision-card-body {
+            padding: 25px;
+        }
+        
+        .efficiency-score {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .score-label {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .score-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 10px 0;
+        }
+        
+        .score-bar {
+            width: 100%;
+            height: 12px;
+            background: #ecf0f1;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            transition: width 0.5s ease;
+        }
+        
+        .recommendation-reason {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #27ae60;
+            margin: 15px 0 20px 0;
+            font-style: italic;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .metric-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #3498db;
+        }
+        
+        .metric-label {
+            font-size: 0.85em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        
+        .metric-value {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 5px 0;
+        }
+        
+        .metric-change {
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        .metric-change.positive {
+            color: #27ae60;
+        }
+        
+        .metric-change.negative {
+            color: #e74c3c;
+        }
+    </style>
+    
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Relatório de Performance - xyzrgb_dragon</h1>
+        <p class="timestamp">Gerado em: 2025-10-23 08:14:44</p>
+    </div>
+<h2>📋 Visão Geral das Variantes</h2>
+<p class="section-description">Comparação rápida entre todas as variantes testadas. Os valores mostram médias de todas as execuções.</p>
+<table class="summary-table">
+<tr><th>Variante</th><th>Tamanho (MB)</th><th>FPS Médio</th><th>Load Time (ms)</th><th>Memória (MB)</th><th>Amostras</th></tr>
+<tr><td class="variant-original">original</td><td>4.2910</td><td>17.96</td><td>199.31</td><td>388.72</td><td>3</td></tr>
+<tr><td class="variant-draco">draco</td><td>0.3240</td><td>18.16</td><td>394.34</td><td>388.17</td><td>3</td></tr>
+<tr><td class="variant-meshopt">meshopt</td><td>0.7160</td><td>17.95</td><td>156.01</td><td>388.67</td><td>3</td></tr>
+</table>
+<h2>🎯 Análise de Trade-offs: Vale a Pena Comprimir?</h2>
+<p class="section-description">Compare os benefícios (redução de tamanho) com os custos (performance e tempo de carregamento). Use esta análise para decidir qual compressão usar.</p>
+<div class="decision-cards">
+<div class="decision-card decision-card-good">
+<div class="decision-card-header" style="background-color: #e74c3c;">
+<h3>DRACO</h3>
+<div class="recommendation-badge">✅ Bom</div>
+</div>
+<div class="decision-card-body">
+<div class="efficiency-score">
+<div class="score-label">Score de Eficiência</div>
+<div class="score-value">82.7/100</div>
+<div class="score-bar"><div class="score-fill" style="width: 82.6642842758989%;"></div></div>
+</div>
+<p class="recommendation-reason">💡 Boa compressão com trade-off aceitável</p>
+<div class="metrics-grid">
+<div class="metric-item">
+<div class="metric-label">📦 Tamanho do Arquivo</div>
+<div class="metric-value">0.3240 MB</div>
+<div class="metric-change positive">+92.4% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">🎮 FPS Médio</div>
+<div class="metric-value">18.16 FPS</div>
+<div class="metric-change positive">+1.1% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">⏱️ Tempo de Carregamento</div>
+<div class="metric-value">394.34 ms</div>
+<div class="metric-change negative">+97.9% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">💾 Memória</div>
+<div class="metric-value">388.17 MB</div>
+<div class="metric-change positive">-0.1% vs original</div>
+</div>
+</div>
+</div>
+</div>
+<div class="decision-card decision-card-excellent">
+<div class="decision-card-header" style="background-color: #2ecc71;">
+<h3>MESHOPT</h3>
+<div class="recommendation-badge">✅ Recomendado</div>
+</div>
+<div class="decision-card-body">
+<div class="efficiency-score">
+<div class="score-label">Score de Eficiência</div>
+<div class="score-value">83.2/100</div>
+<div class="score-bar"><div class="score-fill" style="width: 83.23968756712395%;"></div></div>
+</div>
+<p class="recommendation-reason">💡 Excelente compressão com impacto mínimo na performance</p>
+<div class="metrics-grid">
+<div class="metric-item">
+<div class="metric-label">📦 Tamanho do Arquivo</div>
+<div class="metric-value">0.7160 MB</div>
+<div class="metric-change positive">+83.3% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">🎮 FPS Médio</div>
+<div class="metric-value">17.95 FPS</div>
+<div class="metric-change negative">-0.1% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">⏱️ Tempo de Carregamento</div>
+<div class="metric-value">156.01 ms</div>
+<div class="metric-change positive">-21.7% vs original</div>
+</div>
+<div class="metric-item">
+<div class="metric-label">💾 Memória</div>
+<div class="metric-value">388.67 MB</div>
+<div class="metric-change positive">-0.0% vs original</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>Tempo de Carregamento</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Tempo em milissegundos necessário para carregar e processar o modelo 3D na memória.</strong></p>
+<p><strong>Por que é importante:</strong> Determina quanto tempo o usuário aguarda antes de poder visualizar o modelo. Tempos altos causam má experiência.</p>
+<p><strong>Valores ideais:</strong> < 500ms para modelos pequenos/médios, < 1000ms para modelos grandes</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_load.png" alt="Tempo de Carregamento">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Média aritmética dos valores de load_ms de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>load_ms</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>Modelos comprimidos (Draco/Meshopt) geralmente têm tempo de carregamento maior devido à descompressão. Compare o overhead adicional com o ganho de tamanho de arquivo.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 199.31 ms</li>
+<li class="variant-draco"><strong>draco:</strong> 394.34 ms</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 156.01 ms</li>
+</ul>
+</div>
+<div class="details" id="details-load_ms" onclick="toggleDetails('details-load_ms')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>410.31 ms</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>95.84 ms</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>91.79 ms</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>603.36 ms</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>307.06 ms</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>272.60 ms</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>191.62 ms</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>123.55 ms</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>152.87 ms</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>Uso de Memória</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Quantidade de memória RAM consumida pelo modelo após carregamento completo.</strong></p>
+<p><strong>Por que é importante:</strong> Memória é um recurso limitado, especialmente em dispositivos móveis. Alto consumo pode causar crashes ou impactar outras aplicações.</p>
+<p><strong>Valores ideais:</strong> Proporcional ao tamanho e complexidade do modelo. Modelos simples devem usar < 100MB.</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_mem.png" alt="Uso de Memória">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Média aritmética dos valores de mem_mb de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>mem_mb</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>Modelos comprimidos podem expandir na memória após descompressão. Verifique se o uso de memória permanece aceitável para seu caso de uso.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 388.72 MB</li>
+<li class="variant-draco"><strong>draco:</strong> 388.17 MB</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 388.67 MB</li>
+</ul>
+</div>
+<div class="details" id="details-mem_mb" onclick="toggleDetails('details-mem_mb')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>388.99 MB</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>388.58 MB</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>388.61 MB</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>388.13 MB</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>388.17 MB</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>388.20 MB</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>388.64 MB</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>388.67 MB</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>388.70 MB</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>FPS Médio</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Taxa média de quadros por segundo durante a renderização do modelo.</strong></p>
+<p><strong>Por que é importante:</strong> Mede a performance geral de rendering. FPS baixo resulta em animações travadas e má experiência visual.</p>
+<p><strong>Valores ideais:</strong> ≥ 60 FPS (experiência suave), ≥ 30 FPS (aceitável), < 30 FPS (problemático)</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_fps.png" alt="FPS Médio">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Média aritmética dos valores de fps_avg de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>fps_avg</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>Compare entre variantes para identificar impacto na performance. Diferenças menores que 5% são geralmente imperceptíveis.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 17.96 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 18.16 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 17.95 FPS</li>
+</ul>
+</div>
+<div class="details" id="details-fps_avg" onclick="toggleDetails('details-fps_avg')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>17.70 FPS</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>18.05 FPS</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>18.14 FPS</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>17.81 FPS</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>17.68 FPS</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>19.00 FPS</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>17.98 FPS</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>18.30 FPS</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>17.57 FPS</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>FPS Mínimo</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Menor taxa de FPS registrada durante todos os testes.</strong></p>
+<p><strong>Por que é importante:</strong> Identifica os piores momentos de performance (picos de lag). Importante para garantir experiência consistente.</p>
+<p><strong>Valores ideais:</strong> > 30 FPS (não cair abaixo desse valor)</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_fps_min.png" alt="FPS Mínimo">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Valor mínimo entre todos os fps_min das amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>fps_min</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>FPS mínimo muito abaixo da média indica instabilidade. Investigate possíveis causas (carregamento, garbage collection, etc).</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 15.77 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 15.53 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 15.68 FPS</li>
+</ul>
+</div>
+<div class="details" id="details-fps_min" onclick="toggleDetails('details-fps_min')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>15.87 FPS</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>15.89 FPS</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>15.77 FPS</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>15.53 FPS</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>15.62 FPS</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>16.95 FPS</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>16.37 FPS</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>15.75 FPS</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>15.68 FPS</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>FPS Máximo</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Maior taxa de FPS registrada durante todos os testes.</strong></p>
+<p><strong>Por que é importante:</strong> Mostra o potencial máximo de performance em condições ideais.</p>
+<p><strong>Valores ideais:</strong> Quanto maior, melhor. Pode ser limitado por VSync ou refresh rate do monitor.</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_fps_max.png" alt="FPS Máximo">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Valor máximo entre todos os fps_max das amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>fps_max</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>FPS máximo similar entre variantes indica que a geometria não é o gargalo principal.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 29.65 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 29.98 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 30.29 FPS</li>
+</ul>
+</div>
+<div class="details" id="details-fps_max" onclick="toggleDetails('details-fps_max')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>21.08 FPS</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>25.64 FPS</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>29.65 FPS</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>21.39 FPS</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>29.98 FPS</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>29.38 FPS</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>21.82 FPS</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>30.29 FPS</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>21.84 FPS</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>FPS Mediano</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Valor central da distribuição de FPS (50º percentil).</strong></p>
+<p><strong>Por que é importante:</strong> Mais resistente a valores extremos (outliers) do que a média. Representa melhor a experiência típica.</p>
+<p><strong>Valores ideais:</strong> Próximo ao FPS médio indica distribuição estável</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_fps_median.png" alt="FPS Mediano">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Mediana dos valores de fps_median de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>fps_median</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>Se fps_median for significativamente diferente de fps_avg, há outliers impactando a média.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 17.68 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 17.90 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 17.99 FPS</li>
+</ul>
+</div>
+<div class="details" id="details-fps_median" onclick="toggleDetails('details-fps_median')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>17.59 FPS</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>17.68 FPS</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>18.11 FPS</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>17.90 FPS</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>17.61 FPS</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>18.84 FPS</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>17.99 FPS</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>18.20 FPS</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>17.41 FPS</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>FPS 1% Low</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>FPS do 1º percentil inferior - representa o pior 1% dos frames capturados.</strong></p>
+<p><strong>Por que é importante:</strong> Métrica crítica para detectar stuttering e travamentos momentâneos que arruínam a experiência do usuário.</p>
+<p><strong>Valores ideais:</strong> > 50% do FPS médio indica boa consistência</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_fps_1pc.png" alt="FPS 1% Low">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Média dos valores de fps_1pc_low de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>fps_1pc_low</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>FPS 1% Low muito abaixo da média indica problemas de frame pacing ou stuttering. Isso impacta mais a experiência que um FPS médio alto.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 15.84 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 16.03 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 15.93 FPS</li>
+</ul>
+</div>
+</div>
+<div class="metric-section">
+<h2>Tamanho do Arquivo</h2>
+<div class="metric-description">
+<h3>📖 O que é?</h3>
+<p><strong>Tamanho do arquivo do modelo em megabytes no disco.</strong></p>
+<p><strong>Por que é importante:</strong> Impacta tempo de download, uso de banda, armazenamento e tempo de carregamento inicial.</p>
+<p><strong>Valores ideais:</strong> Quanto menor, melhor - mas sem perder qualidade visual necessária</p>
+</div>
+<div class="chart-container">
+<img src="images/bars_file_size.png" alt="Tamanho do Arquivo">
+</div>
+<div class="metric-formula">
+<h3>🔢 Como é calculada</h3>
+<p><strong>Fórmula:</strong> Média dos valores de file_mb de todas as amostras da variante</p>
+<p><strong>Fonte dos dados:</strong> Coluna <code>file_mb</code> no CSV</p>
+</div>
+<div class="metric-interpretation">
+<h3>💡 Como analisar</h3>
+<p>Calcule a taxa de compressão em relação ao original. Avalie se o ganho de tamanho justifica possíveis perdas de performance.</p>
+<h4>Valores medidos:</h4>
+<ul>
+<li class="variant-original"><strong>original:</strong> 4.2910 MB</li>
+<li class="variant-draco"><strong>draco:</strong> 0.3240 MB</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 0.7160 MB</li>
+</ul>
+</div>
+<div class="details" id="details-file_mb" onclick="toggleDetails('details-file_mb')">
+<h3>📊 Dados Brutos ▼ (clique para expandir)</h3>
+<div class="details-content">
+<h4 class="variant-original">Original:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:26-03:00</td><td>4.29 MB</td></tr>
+<tr><td>2025-10-23 08:12:32-03:00</td><td>4.29 MB</td></tr>
+<tr><td>2025-10-23 08:12:38-03:00</td><td>4.29 MB</td></tr>
+</table>
+<h4 class="variant-draco">Draco:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:13:01-03:00</td><td>0.32 MB</td></tr>
+<tr><td>2025-10-23 08:13:07-03:00</td><td>0.32 MB</td></tr>
+<tr><td>2025-10-23 08:13:13-03:00</td><td>0.32 MB</td></tr>
+</table>
+<h4 class="variant-meshopt">Meshopt:</h4>
+<table class="data-table">
+<tr><th>Timestamp</th><th>Valor</th></tr>
+<tr><td>2025-10-23 08:12:43-03:00</td><td>0.72 MB</td></tr>
+<tr><td>2025-10-23 08:12:49-03:00</td><td>0.72 MB</td></tr>
+<tr><td>2025-10-23 08:12:55-03:00</td><td>0.72 MB</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div class="metric-section">
+<h2>🔬 Metodologia</h2>
+<h3>Como os testes foram executados</h3>
+<p>Os benchmarks foram realizados usando o sistema de métricas do PolyDiet, que:</p>
+<ul>
+<li>Carrega cada variante do modelo múltiplas vezes</li>
+<li>Mede tempo de carregamento, uso de memória e performance de rendering</li>
+<li>Captura FPS por 5 segundos em cada teste</li>
+<li>Calcula estatísticas agregadas (média, mínimo, máximo, percentis)</li>
+</ul>
+<p><strong>Ambiente:</strong></p>
+<ul>
+<li>Plataforma: LinuxEditor</li>
+<li>Unity Version: 6000.2.4f1</li>
+<li>Total de amostras: 9</li>
+</ul>
+</div>
+<div style="text-align: center; margin-top: 50px; padding: 20px; color: #7f8c8d;">
+<p>Relatório gerado automaticamente pelo PolyDiet Report Generator</p>
+</div>
+
+    <script>
+        function toggleDetails(id) {
+            var elem = document.getElementById(id);
+            elem.classList.toggle('open');
+        }
+    </script>
+    </body>
+</html>

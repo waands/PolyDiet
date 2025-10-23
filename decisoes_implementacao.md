@@ -166,3 +166,4 @@
 * **Falta de repetibilidade de versões**: ferramentas npm não fixadas (atualização de gltf-transform pode mudar algoritmos de compressão).
 
 
+

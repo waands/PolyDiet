@@ -1,0 +1,78 @@
+{
+  "model": "xyzrgb_dragon",
+  "timestamp": "2025-10-23T08:14:50.291619",
+  "variants": {
+    "original": {
+      "samples": 3,
+      "file_mb_avg": 4.291,
+      "load_ms_avg": 199.31300000000002,
+      "load_ms_std": 182.73909417801107,
+      "mem_mb_avg": 388.72333333333336,
+      "mem_mb_std": 0.22886750169767003,
+      "fps_avg": 17.963333333333335,
+      "fps_avg_std": 0.23245071162148265,
+      "fps_min": 15.77,
+      "fps_max": 29.65,
+      "fps_median": 17.68,
+      "fps_1pc_avg": 15.843333333333334
+    },
+    "draco": {
+      "samples": 3,
+      "file_mb_avg": 0.324,
+      "load_ms_avg": 394.34133333333335,
+      "load_ms_std": 181.8374745241842,
+      "mem_mb_avg": 388.16799999999995,
+      "mem_mb_std": 0.03300000000001546,
+      "fps_avg": 18.16333333333333,
+      "fps_avg_std": 0.727484249543132,
+      "fps_min": 15.53,
+      "fps_max": 29.98,
+      "fps_median": 17.9,
+      "fps_1pc_avg": 16.03333333333333
+    },
+    "meshopt": {
+      "samples": 3,
+      "file_mb_avg": 0.7159999999999999,
+      "load_ms_avg": 156.01466666666667,
+      "load_ms_std": 34.14350692786746,
+      "mem_mb_avg": 388.66966666666667,
+      "mem_mb_std": 0.029005746557072866,
+      "fps_avg": 17.95,
+      "fps_avg_std": 0.36592348927063995,
+      "fps_min": 15.68,
+      "fps_max": 30.29,
+      "fps_median": 17.99,
+      "fps_1pc_avg": 15.933333333333335
+    }
+  },
+  "comparisons": {
+    "draco_vs_original": {
+      "variant": "draco",
+      "file_size_reduction_pct": 92.44931251456538,
+      "load_time_change_pct": 97.85028238666486,
+      "mem_change_pct": -0.14286081789106425,
+      "fps_change_pct": 1.113379105585428,
+      "efficiency_score": 82.6642842758989,
+      "recommendation": "✅ Bom",
+      "reason": "Boa compressão com trade-off aceitável",
+      "file_mb": 0.324,
+      "load_ms": 394.34133333333335,
+      "fps_avg": 18.16333333333333,
+      "mem_mb": 388.16799999999995
+    },
+    "meshopt_vs_original": {
+      "variant": "meshopt",
+      "file_size_reduction_pct": 83.31391284082966,
+      "load_time_change_pct": -21.723787878027697,
+      "mem_change_pct": -0.01380587735922363,
+      "fps_change_pct": -0.07422527370570839,
+      "efficiency_score": 83.23968756712395,
+      "recommendation": "✅ Recomendado",
+      "reason": "Excelente compressão com impacto mínimo na performance",
+      "file_mb": 0.7159999999999999,
+      "load_ms": 156.01466666666667,
+      "fps_avg": 17.95,
+      "mem_mb": 388.66966666666667
+    }
+  }
+}
