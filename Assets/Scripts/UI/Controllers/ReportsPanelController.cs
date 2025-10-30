@@ -683,6 +683,8 @@ namespace PolyDiet.UI.Controllers
                 titleText.text = title;
                 titleText.fontSize = 20;
                 titleText.alignment = TextAlignmentOptions.Center;
+                titleText.color = Color.black;            // títulos pretos
+                titleText.fontStyle = FontStyles.Bold;     // títulos em negrito
             }
             
             RawImage image = item.GetComponentInChildren<RawImage>();
@@ -735,7 +737,8 @@ namespace PolyDiet.UI.Controllers
             titleText.text = title;
             titleText.fontSize = 20;
             titleText.alignment = TextAlignmentOptions.Center;
-            titleText.color = Color.white;
+            titleText.color = Color.black;            // títulos pretos
+            titleText.fontStyle = FontStyles.Bold;     // títulos em negrito
             
             // Imagem
             GameObject imageObj = new GameObject("Image");
