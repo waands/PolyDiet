@@ -92,20 +92,6 @@ public static class ModelConverter
         try
         {
             // TODO: Implementar usando Assimp.NET
-            // Exemplo de implementação:
-            /*
-            using (var importer = new Assimp.AssimpContext())
-            {
-                var scene = importer.ImportFile(sourcePath, Assimp.PostProcessSteps.Triangulate | Assimp.PostProcessSteps.FlipUVs);
-                
-                // Converter para GLTF
-                using (var exporter = new Assimp.AssimpContext())
-                {
-                    exporter.ExportFile(scene, destPath, "gltf2");
-                }
-            }
-            */
-            
             Debug.Log("[ModelConverter] ⚠️ Assimp.NET não implementado ainda");
             await Task.Yield();
             return false;
@@ -126,18 +112,6 @@ public static class ModelConverter
         try
         {
             // TODO: Implementar usando FBX Exporter + glTFast
-            // Exemplo de implementação:
-            /*
-            // 1. Importar usando FBX Exporter
-            var fbxImporter = AssetImporter.GetAtPath(sourcePath) as FbxImporter;
-            if (fbxImporter != null)
-            {
-                // 2. Exportar para GLTF usando glTFast
-                var gltfExporter = new GltfExporter();
-                await gltfExporter.ExportAsync(destPath);
-            }
-            */
-            
             Debug.Log("[ModelConverter] ⚠️ FBX Exporter não implementado ainda");
             await Task.Yield();
             return false;

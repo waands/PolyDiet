@@ -12,18 +12,22 @@ public class ReportRunner : MonoBehaviour
     [Tooltip("Evento disparado quando um relatório é gerado com sucesso")]
     public UnityEngine.Events.UnityEvent<string> OnReportComplete;
     
-    [Header("Paths")]
-    [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha.")]
-    public string pythonPath = ""; // se vazio, escolhemos automaticamente
-    [Tooltip("Caminho para o script de relatório (deixe vazio para usar simple_report_generator.py)")]
+    [Header("Configuração Centralizada")]
+    [Tooltip("Se configurado, usa PolyDietConfig. Caso contrário, usa os campos abaixo (compatibilidade)")]
+    public PolyDietConfig config;
+
+    [Header("Paths (Legado - use PolyDietConfig se possível)")]
+    [Tooltip("Use Python do sistema (ex.: 'python' no Linux, 'py' ou 'python.exe' no Windows). Deixe vazio para auto-escolha ou usar PolyDietConfig.")]
+    public string pythonPath = ""; // se vazio, escolhemos automaticamente ou usa config
+    [Tooltip("Caminho para o script de relatório (deixe vazio para usar simple_report_generator.py ou PolyDietConfig)")]
     public string scriptPath = ""; // ex.: Application.dataPath + "/Scripts/Metrics/reports_tool/simple_report_generator.py"
     [Tooltip("Opcional: binário empacotado (PyInstaller). Se preenchido, ignora pythonPath/scriptPath.")]
     public string packagedExePath = ""; // ex.: Application.dataPath + "/../reports_tool/dist/metrics_report.exe"
 
     [Header("Inputs")]
-    [Tooltip("Se vazio, usa persistentDataPath/Benchmarks/benchmarks.csv")]
+    [Tooltip("Se vazio, usa persistentDataPath/Benchmarks/benchmarks.csv ou PolyDietConfig")]
     public string csvPathOverride = "";
-    [Tooltip("Se vazio, usa persistentDataPath/Reports/<timestamp>")]
+    [Tooltip("Se vazio, usa persistentDataPath/Reports/<timestamp> ou PolyDietConfig")]
     public string outDirOverride = "";
 
     [Header("Options")]
@@ -93,6 +97,9 @@ public class ReportRunner : MonoBehaviour
 
         _isGeneratingReport = true; // BLOQUEIA o sistema aqui
 
+        // Carregar config uma única vez no início do método
+        var cfg = config != null ? config : PolyDietConfigManager.GetConfig();
+
         string model = ResolveModel();
         
         // NOVO: validação - não aceitar "all"
@@ -103,7 +110,10 @@ public class ReportRunner : MonoBehaviour
             return;
         }
         
-        string outDir = string.IsNullOrEmpty(outDirOverride) ? OutDirDefault(model) : outDirOverride;
+        // Usar config se disponível, senão usar override ou padrão
+        string outDir = string.IsNullOrEmpty(outDirOverride) 
+            ? (string.IsNullOrEmpty(cfg.reportsOutputPathOverride) ? OutDirDefault(model) : cfg.reportsOutputPathOverride)
+            : outDirOverride;
         
         // Limpar diretório existente para garantir relatório unificado
         if (Directory.Exists(outDir))
@@ -129,13 +139,14 @@ public class ReportRunner : MonoBehaviour
             Log($"<color=orange>[Report] Nenhum arquivo CSV encontrado para o modelo '{model}'</color>");
         }
 
-        // Fallback: se não há CSV, tenta usar CSV específico se fornecido
-        if (csvPaths.Length == 0 && !string.IsNullOrEmpty(csvPathOverride))
+        // Fallback: se não há CSV, tenta usar CSV específico se fornecido (da config ou override)
+        string csvOverride = string.IsNullOrEmpty(csvPathOverride) ? cfg.csvPathOverride : csvPathOverride;
+        if (csvPaths.Length == 0 && !string.IsNullOrEmpty(csvOverride))
         {
-            if (File.Exists(csvPathOverride))
+            if (File.Exists(csvOverride))
             {
-                csvPaths = new string[] { csvPathOverride };
-                Log($"[Report] Usando CSV específico (fallback): {csvPathOverride}");
+                csvPaths = new string[] { csvOverride };
+                Log($"[Report] Usando CSV específico (fallback): {csvOverride}");
             }
         }
 
@@ -155,13 +166,8 @@ public class ReportRunner : MonoBehaviour
         // Juntar todos os caminhos em uma única string, separados por espaço
         string allCsvPaths = string.Join(" ", csvPaths.Select(p => $"\"{p}\""));
 
-        // Escolher script (usa simple por padrão)
-        string actualScriptPath = scriptPath;
-        if (string.IsNullOrEmpty(actualScriptPath))
-        {
-            // Usa script simple por padrão
-            actualScriptPath = Path.Combine(Application.dataPath, "Scripts", "Metrics", "reports_tool", "simple_report_generator.py");
-        }
+        // Escolher script (usa config se disponível, senão usa override ou padrão)
+        string actualScriptPath = string.IsNullOrEmpty(scriptPath) ? cfg.GetPythonScriptPath() : scriptPath;
         
         if (!File.Exists(actualScriptPath))
         {
@@ -175,14 +181,20 @@ public class ReportRunner : MonoBehaviour
         // Construir os argumentos para execução (novo formato simplificado)
         string args = $"\"{actualScriptPath}\" --out \"{outDir}\" --model {model} --csv-files {allCsvPaths}";
         
-        if (genHtml) args += " --html";
-        if (genPdf)  args += " --pdf";
+        // Usar config para opções se disponível
+        bool shouldGenHtml = cfg != null ? cfg.generateHtml : genHtml;
+        bool shouldGenPdf = cfg != null ? cfg.generatePdf : genPdf;
+        
+        if (shouldGenHtml) args += " --html";
+        if (shouldGenPdf)  args += " --pdf";
 
         string file;
         string finalArgs;
-        if (!string.IsNullOrEmpty(packagedExePath))
+        string packagedExe = string.IsNullOrEmpty(packagedExePath) ? cfg.pythonPackagedExePath : packagedExePath;
+        
+        if (!string.IsNullOrEmpty(packagedExe))
         {
-            file = packagedExePath;
+            file = packagedExe;
             finalArgs = args.Replace($"\"{actualScriptPath}\" ", "");
         }
         else
@@ -203,6 +215,20 @@ public class ReportRunner : MonoBehaviour
 
     string AutoPython()
     {
+        // Usar config se disponível
+        var cfg = config != null ? config : PolyDietConfigManager.GetConfig();
+        
+        // Se tem pythonPath no override, usar
+        if (!string.IsNullOrEmpty(pythonPath)) return pythonPath;
+        
+        // Se tem na config, usar
+        string cfgPython = cfg.GetPythonPath();
+        if (!string.IsNullOrEmpty(cfgPython) && File.Exists(cfgPython))
+        {
+            Log($"[Report] Usando Python da config: {cfgPython}");
+            return cfgPython;
+        }
+        
         // Primeiro, tenta usar o ambiente virtual se existir
         string venvPath = Path.Combine(Application.dataPath, "..", "reports_env", "bin", "python");
         if (File.Exists(venvPath))
@@ -212,8 +238,6 @@ public class ReportRunner : MonoBehaviour
         }
         
         // Fallback para Python do sistema
-        if (!string.IsNullOrEmpty(pythonPath)) return pythonPath;
-        
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         return "py"; // tenta o launcher do Windows; se não, troque para "python"
 #else

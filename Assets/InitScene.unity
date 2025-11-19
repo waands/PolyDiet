@@ -1188,7 +1188,8 @@ MonoBehaviour:
   mainSceneName: ModelViewer
   mainPageRoot: {fileID: 0}
   startPanelRoot: {fileID: 0}
-  databaseUrlOrPath: www.github.com/waands/PolyDiet/
+  config: {fileID: 0}
+  databaseUrlOrPath: https://github.com/waands/PolyDiet/
 --- !u!1 &1757431894
 GameObject:
   m_ObjectHideFlags: 0

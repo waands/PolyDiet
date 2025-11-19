@@ -22,8 +22,12 @@ namespace PolyDiet.UI.Controllers
         [Tooltip("Raiz do painel/tela inicial para ocultar após iniciar (opcional)")]
         public GameObject startPanelRoot;
 
+        [Header("Configuração")]
+        [Tooltip("Configuração centralizada do PolyDiet (opcional)")]
+        public PolyDietConfig config;
+
         [Header("Base de Dados")]
-        [Tooltip("URL ou caminho local da base de dados (deixe vazio para usar a pasta de Benchmarks padrão)")]
+        [Tooltip("URL ou caminho local da base de dados (deixe vazio para usar PolyDietConfig ou pasta de Benchmarks padrão)")]
         public string databaseUrlOrPath = "";
 
         void Awake()
@@ -73,8 +77,14 @@ namespace PolyDiet.UI.Controllers
 
         string ResolveDatabaseTarget()
         {
+            // Usar override se fornecido
             if (!string.IsNullOrWhiteSpace(databaseUrlOrPath))
                 return databaseUrlOrPath;
+
+            // Tentar usar config
+            var cfg = config != null ? config : PolyDietConfigManager.GetConfig();
+            if (!string.IsNullOrWhiteSpace(cfg.repositoryUrl))
+                return cfg.repositoryUrl;
 
             // Padrão: pasta de Benchmarks usada pelo sistema de métricas
             // (mesmo fallback usado no MetricsViewer)

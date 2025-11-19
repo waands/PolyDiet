@@ -328,15 +328,15 @@
 <body>
     <div class="header">
         <h1>📊 Relatório de Performance - suzanne</h1>
-        <p class="timestamp">Gerado em: 2025-10-23 17:35:05</p>
+        <p class="timestamp">Gerado em: 2025-11-19 20:32:56</p>
     </div>
 <h2>📋 Visão Geral das Variantes</h2>
 <p class="section-description">Comparação rápida entre todas as variantes testadas. Os valores mostram médias de todas as execuções.</p>
 <table class="summary-table">
 <tr><th>Variante</th><th>Tamanho (MB)</th><th>FPS Médio</th><th>Load Time (ms)</th><th>Memória (MB)</th><th>Amostras</th></tr>
-<tr><td class="variant-original">original</td><td>0.0190</td><td>61.74</td><td>175.67</td><td>385.35</td><td>3</td></tr>
-<tr><td class="variant-draco">draco</td><td>0.0040</td><td>61.91</td><td>109.51</td><td>384.55</td><td>3</td></tr>
-<tr><td class="variant-meshopt">meshopt</td><td>0.0060</td><td>61.51</td><td>103.38</td><td>384.43</td><td>3</td></tr>
+<tr><td class="variant-original">original</td><td>0.0190</td><td>41.78</td><td>2068.24</td><td>397.35</td><td>3</td></tr>
+<tr><td class="variant-draco">draco</td><td>0.0040</td><td>63.88</td><td>67.61</td><td>397.63</td><td>3</td></tr>
+<tr><td class="variant-meshopt">meshopt</td><td>0.0060</td><td>63.14</td><td>67.60</td><td>397.49</td><td>3</td></tr>
 </table>
 <h2>🎯 Análise de Trade-offs: Vale a Pena Comprimir?</h2>
 <p class="section-description">Compare os benefícios (redução de tamanho) com os custos (performance e tempo de carregamento). Use esta análise para decidir qual compressão usar.</p>
@@ -361,18 +361,18 @@
 </div>
 <div class="metric-item">
 <div class="metric-label">🎮 FPS Médio</div>
-<div class="metric-value">61.91 FPS</div>
-<div class="metric-change positive">+0.3% vs original</div>
+<div class="metric-value">63.88 FPS</div>
+<div class="metric-change positive">+52.9% vs original</div>
 </div>
 <div class="metric-item">
 <div class="metric-label">⏱️ Tempo de Carregamento</div>
-<div class="metric-value">109.51 ms</div>
-<div class="metric-change positive">-37.7% vs original</div>
+<div class="metric-value">67.61 ms</div>
+<div class="metric-change positive">-96.7% vs original</div>
 </div>
 <div class="metric-item">
 <div class="metric-label">💾 Memória</div>
-<div class="metric-value">384.55 MB</div>
-<div class="metric-change positive">-0.2% vs original</div>
+<div class="metric-value">397.63 MB</div>
+<div class="metric-change negative">+0.1% vs original</div>
 </div>
 </div>
 </div>
@@ -385,8 +385,8 @@
 <div class="decision-card-body">
 <div class="efficiency-score">
 <div class="score-label">Score de Eficiência</div>
-<div class="score-value">68.1/100</div>
-<div class="score-bar"><div class="score-fill" style="width: 68.05392165220304%;"></div></div>
+<div class="score-value">68.4/100</div>
+<div class="score-bar"><div class="score-fill" style="width: 68.42105263157893%;"></div></div>
 </div>
 <p class="recommendation-reason">💡 Excelente compressão com impacto mínimo na performance</p>
 <div class="metrics-grid">
@@ -397,18 +397,18 @@
 </div>
 <div class="metric-item">
 <div class="metric-label">🎮 FPS Médio</div>
-<div class="metric-value">61.51 FPS</div>
-<div class="metric-change negative">-0.4% vs original</div>
+<div class="metric-value">63.14 FPS</div>
+<div class="metric-change positive">+51.1% vs original</div>
 </div>
 <div class="metric-item">
 <div class="metric-label">⏱️ Tempo de Carregamento</div>
-<div class="metric-value">103.38 ms</div>
-<div class="metric-change positive">-41.2% vs original</div>
+<div class="metric-value">67.60 ms</div>
+<div class="metric-change positive">-96.7% vs original</div>
 </div>
 <div class="metric-item">
 <div class="metric-label">💾 Memória</div>
-<div class="metric-value">384.43 MB</div>
-<div class="metric-change positive">-0.2% vs original</div>
+<div class="metric-value">397.49 MB</div>
+<div class="metric-change negative">+0.0% vs original</div>
 </div>
 </div>
 </div>
@@ -435,9 +435,9 @@
 <p>Modelos comprimidos (Draco/Meshopt) geralmente têm tempo de carregamento maior devido à descompressão. Compare o overhead adicional com o ganho de tamanho de arquivo.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 175.67 ms</li>
-<li class="variant-draco"><strong>draco:</strong> 109.51 ms</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 103.38 ms</li>
+<li class="variant-original"><strong>original:</strong> 2068.24 ms</li>
+<li class="variant-draco"><strong>draco:</strong> 67.61 ms</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 67.60 ms</li>
 </ul>
 </div>
 <div class="details" id="details-load_ms" onclick="toggleDetails('details-load_ms')">
@@ -446,23 +446,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>383.97 ms</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>73.46 ms</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>69.59 ms</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>145.33 ms</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>3041.81 ms</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>3017.58 ms</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>181.28 ms</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>73.50 ms</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>73.75 ms</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>75.84 ms</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>56.46 ms</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>70.53 ms</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>133.97 ms</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>101.58 ms</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>74.59 ms</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>58.58 ms</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>72.20 ms</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>72.00 ms</td></tr>
 </table>
 </div>
 </div>
@@ -488,9 +488,9 @@
 <p>Modelos comprimidos podem expandir na memória após descompressão. Verifique se o uso de memória permanece aceitável para seu caso de uso.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 385.35 MB</li>
-<li class="variant-draco"><strong>draco:</strong> 384.55 MB</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 384.43 MB</li>
+<li class="variant-original"><strong>original:</strong> 397.35 MB</li>
+<li class="variant-draco"><strong>draco:</strong> 397.63 MB</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 397.49 MB</li>
 </ul>
 </div>
 <div class="details" id="details-mem_mb" onclick="toggleDetails('details-mem_mb')">
@@ -499,23 +499,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>387.53 MB</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>384.25 MB</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>384.28 MB</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>397.34 MB</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>397.35 MB</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>397.35 MB</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>384.68 MB</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>384.46 MB</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>384.50 MB</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>397.73 MB</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>397.56 MB</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>397.60 MB</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>384.54 MB</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>384.36 MB</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>384.40 MB</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>397.54 MB</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>397.44 MB</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>397.49 MB</td></tr>
 </table>
 </div>
 </div>
@@ -541,9 +541,9 @@
 <p>Compare entre variantes para identificar impacto na performance. Diferenças menores que 5% são geralmente imperceptíveis.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 61.74 FPS</li>
-<li class="variant-draco"><strong>draco:</strong> 61.91 FPS</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 61.51 FPS</li>
+<li class="variant-original"><strong>original:</strong> 41.78 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 63.88 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 63.14 FPS</li>
 </ul>
 </div>
 <div class="details" id="details-fps_avg" onclick="toggleDetails('details-fps_avg')">
@@ -552,23 +552,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>62.39 FPS</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>61.40 FPS</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>61.43 FPS</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>63.03 FPS</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>1.00 FPS</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>61.31 FPS</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>62.17 FPS</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>61.84 FPS</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>61.73 FPS</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>63.71 FPS</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>64.29 FPS</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>63.65 FPS</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>61.90 FPS</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>61.30 FPS</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>61.34 FPS</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>62.71 FPS</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>62.42 FPS</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>64.29 FPS</td></tr>
 </table>
 </div>
 </div>
@@ -594,9 +594,9 @@
 <p>FPS mínimo muito abaixo da média indica instabilidade. Investigate possíveis causas (carregamento, garbage collection, etc).</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 26.19 FPS</li>
-<li class="variant-draco"><strong>draco:</strong> 30.38 FPS</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 23.07 FPS</li>
+<li class="variant-original"><strong>original:</strong> 1.00 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 33.74 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 29.03 FPS</li>
 </ul>
 </div>
 <div class="details" id="details-fps_min" onclick="toggleDetails('details-fps_min')">
@@ -605,23 +605,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>26.19 FPS</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>32.51 FPS</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>33.57 FPS</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>9.98 FPS</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>1.00 FPS</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>1.33 FPS</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>38.69 FPS</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>30.38 FPS</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>37.19 FPS</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>34.53 FPS</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>33.74 FPS</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>34.96 FPS</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>25.04 FPS</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>23.07 FPS</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>39.88 FPS</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>29.03 FPS</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>34.40 FPS</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>34.76 FPS</td></tr>
 </table>
 </div>
 </div>
@@ -647,9 +647,9 @@
 <p>FPS máximo similar entre variantes indica que a geometria não é o gargalo principal.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 143.70 FPS</li>
-<li class="variant-draco"><strong>draco:</strong> 142.26 FPS</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 134.65 FPS</li>
+<li class="variant-original"><strong>original:</strong> 186.15 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 147.02 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 152.83 FPS</li>
 </ul>
 </div>
 <div class="details" id="details-fps_max" onclick="toggleDetails('details-fps_max')">
@@ -658,23 +658,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>141.34 FPS</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>135.16 FPS</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>143.70 FPS</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>186.15 FPS</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>1.00 FPS</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>138.55 FPS</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>125.33 FPS</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>142.26 FPS</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>139.15 FPS</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>147.02 FPS</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>144.20 FPS</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>144.12 FPS</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>125.57 FPS</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>128.82 FPS</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>134.65 FPS</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>152.83 FPS</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>145.74 FPS</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>148.89 FPS</td></tr>
 </table>
 </div>
 </div>
@@ -700,9 +700,9 @@
 <p>Se fps_median for significativamente diferente de fps_avg, há outliers impactando a média.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 59.73 FPS</li>
-<li class="variant-draco"><strong>draco:</strong> 59.66 FPS</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 59.71 FPS</li>
+<li class="variant-original"><strong>original:</strong> 59.96 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 60.19 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 60.18 FPS</li>
 </ul>
 </div>
 <div class="details" id="details-fps_median" onclick="toggleDetails('details-fps_median')">
@@ -711,23 +711,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>59.75 FPS</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>59.70 FPS</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>59.73 FPS</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>60.15 FPS</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>1.00 FPS</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>59.96 FPS</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>59.70 FPS</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>59.63 FPS</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>59.66 FPS</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>60.19 FPS</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>60.27 FPS</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>60.16 FPS</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>59.87 FPS</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>59.57 FPS</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>59.71 FPS</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>60.16 FPS</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>60.18 FPS</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>60.20 FPS</td></tr>
 </table>
 </div>
 </div>
@@ -753,9 +753,9 @@
 <p>FPS 1% Low muito abaixo da média indica problemas de frame pacing ou stuttering. Isso impacta mais a experiência que um FPS médio alto.</p>
 <h4>Valores medidos:</h4>
 <ul>
-<li class="variant-original"><strong>original:</strong> 41.51 FPS</li>
-<li class="variant-draco"><strong>draco:</strong> 40.98 FPS</li>
-<li class="variant-meshopt"><strong>meshopt:</strong> 35.00 FPS</li>
+<li class="variant-original"><strong>original:</strong> 4.11 FPS</li>
+<li class="variant-draco"><strong>draco:</strong> 35.38 FPS</li>
+<li class="variant-meshopt"><strong>meshopt:</strong> 35.30 FPS</li>
 </ul>
 </div>
 </div>
@@ -791,23 +791,23 @@
 <h4 class="variant-original">Original:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:05-03:00</td><td>0.02 MB</td></tr>
-<tr><td>2025-10-23 17:25:11-03:00</td><td>0.02 MB</td></tr>
-<tr><td>2025-10-23 17:25:16-03:00</td><td>0.02 MB</td></tr>
+<tr><td>2025-11-19 20:31:12-03:00</td><td>0.02 MB</td></tr>
+<tr><td>2025-11-19 20:31:21-03:00</td><td>0.02 MB</td></tr>
+<tr><td>2025-11-19 20:31:32-03:00</td><td>0.02 MB</td></tr>
 </table>
 <h4 class="variant-draco">Draco:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:38-03:00</td><td>0.00 MB</td></tr>
-<tr><td>2025-10-23 17:25:44-03:00</td><td>0.00 MB</td></tr>
-<tr><td>2025-10-23 17:25:50-03:00</td><td>0.00 MB</td></tr>
+<tr><td>2025-11-19 20:31:53-03:00</td><td>0.00 MB</td></tr>
+<tr><td>2025-11-19 20:31:58-03:00</td><td>0.00 MB</td></tr>
+<tr><td>2025-11-19 20:32:04-03:00</td><td>0.00 MB</td></tr>
 </table>
 <h4 class="variant-meshopt">Meshopt:</h4>
 <table class="data-table">
 <tr><th>Timestamp</th><th>Valor</th></tr>
-<tr><td>2025-10-23 17:25:22-03:00</td><td>0.01 MB</td></tr>
-<tr><td>2025-10-23 17:25:27-03:00</td><td>0.01 MB</td></tr>
-<tr><td>2025-10-23 17:25:33-03:00</td><td>0.01 MB</td></tr>
+<tr><td>2025-11-19 20:31:37-03:00</td><td>0.01 MB</td></tr>
+<tr><td>2025-11-19 20:31:42-03:00</td><td>0.01 MB</td></tr>
+<tr><td>2025-11-19 20:31:48-03:00</td><td>0.01 MB</td></tr>
 </table>
 </div>
 </div>

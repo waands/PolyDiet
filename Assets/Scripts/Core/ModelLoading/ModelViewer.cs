@@ -31,6 +31,10 @@ public class ModelViewer : MonoBehaviour
     public HUDController hudController; // referência para notificar sobre carregamentos
     public SimpleOrbitCamera orbitCamera; // referência para ajustar câmera automaticamente
 
+    [Header("Background")]
+    [Tooltip("Cor do fundo quando não há modelo sendo visualizado")]
+    public Color solidBackgroundColor = new Color(0.6235f, 0.8196f, 0.5843f, 1f); // #9FD195
+
     // ===== Descoberta dinâmica =====
     private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
     private readonly List<string> _modelNames = new();
@@ -89,6 +93,54 @@ public class ModelViewer : MonoBehaviour
 
     private void SetStatus(string msg) => textStatus?.SetText(msg);
 
+    // ======== CAMERA BACKGROUND ========
+
+    /// <summary>
+    /// Atualiza o fundo da câmera baseado no estado do modelo:
+    /// - Com modelo: usa Skybox
+    /// - Sem modelo: usa cor sólida
+    /// Prioriza a câmera do orbitCamera (SimpleOrbitCamera)
+    /// </summary>
+    private void UpdateCameraBackground()
+    {
+        Camera cam = null;
+        
+        // PRIORIDADE 1: Câmera do orbitCamera (SimpleOrbitCamera) - esta é a câmera principal
+        if (orbitCamera != null)
+        {
+            cam = orbitCamera.GetComponent<Camera>();
+            if (cam == null)
+            {
+                UDebug.LogWarning("[ModelViewer] orbitCamera não tem componente Camera");
+            }
+        }
+        
+        // FALLBACK: Camera.main se orbitCamera não tiver câmera
+        if (cam == null)
+        {
+            cam = Camera.main;
+        }
+        
+        if (cam == null)
+        {
+            UDebug.LogWarning("[ModelViewer] Nenhuma câmera encontrada para atualizar o fundo");
+            return;
+        }
+
+        // Se há modelo carregado, usa skybox; caso contrário, usa cor sólida
+        if (_currentContainer != null)
+        {
+            cam.clearFlags = CameraClearFlags.Skybox;
+            UDebug.Log($"[ModelViewer] Fundo alterado para Skybox (modelo visualizado) - Câmera: {cam.name}");
+        }
+        else
+        {
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = solidBackgroundColor;
+            UDebug.Log($"[ModelViewer] Fundo alterado para cor sólida: {solidBackgroundColor} - Câmera: {cam.name}");
+        }
+    }
+
     void Awake()
     {
         ScanModelsAndPopulateUI();
@@ -103,6 +155,13 @@ public class ModelViewer : MonoBehaviour
         dropdownModel.onValueChanged.AddListener(_ => PopulateVariantsForCurrentModel());
 
         SetStatus("Pronto.");
+    }
+
+    void Start()
+    {
+        // Configurar fundo inicial (sem modelo = cor sólida)
+        // Usa Start() ao invés de Awake() para garantir que orbitCamera já está inicializado
+        UpdateCameraBackground();
     }
 
     // ======== SCAN DINÂMICO ========
@@ -233,6 +292,9 @@ public class ModelViewer : MonoBehaviour
             for (int i = spawnParent.childCount - 1; i >= 0; i--)
                 Destroy(spawnParent.GetChild(i).gameObject);
         }
+        
+        // Atualizar fundo para cor sólida quando não há modelo
+        UpdateCameraBackground();
     }
 
     // Normaliza escala de modelos para um tamanho padrão visível
@@ -340,6 +402,9 @@ public class ModelViewer : MonoBehaviour
 
             // Normaliza a escala do modelo se necessário
             NormalizeModelScale(_currentContainer);
+
+            // Atualizar fundo para skybox quando modelo é carregado
+            UpdateCameraBackground();
 
             // Medir FPS após carregamento bem-sucedido
             if (Metrics.Instance != null && ok)
@@ -507,6 +572,38 @@ public class ModelViewer : MonoBehaviour
                 return false;
             }
 
+            // Verifica se o arquivo precisa ser convertido (OBJ ou GLB inválido)
+            string actualInput = input;
+            string extension = Path.GetExtension(input).ToLower();
+            
+            // Se for OBJ ou se o arquivo não for um GLB válido, tenta converter
+            if (extension == ".obj" || !ValidateGltfFile(input))
+            {
+                // Se for OBJ, tenta converter para GLB primeiro
+                if (extension == ".obj")
+                {
+                    UDebug.Log($"[CompressMeshopt] Arquivo é OBJ, convertendo para GLB primeiro...");
+                    string tempGlb = Path.ChangeExtension(input, ".glb");
+                    
+                    bool converted = await ModelConverter.ConvertToGlbAsync(input, tempGlb);
+                    if (!converted || !File.Exists(tempGlb))
+                    {
+                        UDebug.LogError($"[CompressMeshopt] Falha ao converter OBJ para GLB: {input}");
+                        return false;
+                    }
+                    
+                    actualInput = tempGlb;
+                    UDebug.Log($"[CompressMeshopt] ✅ Conversão OBJ → GLB bem-sucedida");
+                }
+                else
+                {
+                    // Arquivo não é GLB válido e não é OBJ
+                    UDebug.LogError($"[CompressMeshopt] Arquivo não é um GLB/GLTF válido: {input}");
+                    UDebug.LogError($"[CompressMeshopt] O arquivo pode estar corrompido. Verifique o arquivo.");
+                    return false;
+                }
+            }
+
             if (!CrossPlatformHelper.EnsureDirectoryExists(Path.GetDirectoryName(output)!))
             {
                 UDebug.LogError($"[CompressMeshopt] Não foi possível criar diretório de saída");
@@ -521,7 +618,7 @@ public class ModelViewer : MonoBehaviour
                 UDebug.LogError($"[CompressMeshopt] Coloque em Assets/StreamingAssets/Tools/");
                 return false;
             }
-            string args = $"-i {Q(Path.GetFullPath(input))} -o {Q(Path.GetFullPath(output))} -cc";
+            string args = $"-i {Q(Path.GetFullPath(actualInput))} -o {Q(Path.GetFullPath(output))} -cc";
 #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
             string exe = GetGltfpackLinux();      // dinâmico
             string args = $"-i {Q(input)} -o {Q(output)} -cc";
@@ -546,10 +643,15 @@ public class ModelViewer : MonoBehaviour
             
             if (success)
             {
-                long inputSize = new FileInfo(input).Length;
+                long inputSize = new FileInfo(actualInput).Length;
                 long outputSize = new FileInfo(output).Length;
                 float compressionRatio = (float)outputSize / inputSize;
                 UDebug.Log($"[CompressMeshopt] ✅ Sucesso! Tamanho: {inputSize} → {outputSize} bytes (ratio: {compressionRatio:F2})");
+                
+                // Se criou um arquivo temporário (conversão OBJ), pode removê-lo se quiser
+                // (deixando comentado para manter o arquivo convertido)
+                // if (actualInput != input && File.Exists(actualInput))
+                //     File.Delete(actualInput);
             }
             else
             {
@@ -579,6 +681,38 @@ public class ModelViewer : MonoBehaviour
                 return false;
             }
 
+            // Verifica se o arquivo precisa ser convertido (OBJ ou GLB inválido)
+            string actualInput = input;
+            string extension = Path.GetExtension(input).ToLower();
+            
+            // Se for OBJ ou se o arquivo não for um GLB válido, tenta converter
+            if (extension == ".obj" || !ValidateGltfFile(input))
+            {
+                // Se for OBJ, tenta converter para GLB primeiro
+                if (extension == ".obj")
+                {
+                    UDebug.Log($"[CompressDraco] Arquivo é OBJ, convertendo para GLB primeiro...");
+                    string tempGlb = Path.ChangeExtension(input, ".glb");
+                    
+                    bool converted = await ModelConverter.ConvertToGlbAsync(input, tempGlb);
+                    if (!converted || !File.Exists(tempGlb))
+                    {
+                        UDebug.LogError($"[CompressDraco] Falha ao converter OBJ para GLB: {input}");
+                        return false;
+                    }
+                    
+                    actualInput = tempGlb;
+                    UDebug.Log($"[CompressDraco] ✅ Conversão OBJ → GLB bem-sucedida");
+                }
+                else
+                {
+                    // Arquivo não é GLB válido e não é OBJ
+                    UDebug.LogError($"[CompressDraco] Arquivo não é um GLB/GLTF válido: {input}");
+                    UDebug.LogError($"[CompressDraco] O arquivo pode estar corrompido. Verifique o arquivo.");
+                    return false;
+                }
+            }
+
             if (!CrossPlatformHelper.EnsureDirectoryExists(Path.GetDirectoryName(output)!))
             {
                 UDebug.LogError($"[CompressDraco] Não foi possível criar diretório de saída");
@@ -596,7 +730,7 @@ public class ModelViewer : MonoBehaviour
             }
 
             // 2) Normaliza caminhos para BACKSLASH e usa aspas
-            string inPath  = WinPath(Path.GetFullPath(input));
+            string inPath  = WinPath(Path.GetFullPath(actualInput));
             string outPath = WinPath(Path.GetFullPath(output));
 
             UDebug.Log($"[CompressDraco] Comprimindo: {inPath} → {outPath}");
@@ -605,10 +739,10 @@ public class ModelViewer : MonoBehaviour
             string file = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
             string args = $"/c \"\"{cmdPath}\" optimize {Q(inPath)} {Q(outPath)} --compress draco\"";
 #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-            UDebug.Log($"[CompressDraco] Comprimindo: {input} → {output}");
+            UDebug.Log($"[CompressDraco] Comprimindo: {actualInput} → {output}");
             
             string file = GetGltfTransformLinux(); // dinâmico
-            string args = $"optimize {Q(input)} {Q(output)} --compress draco";
+            string args = $"optimize {Q(actualInput)} {Q(output)} --compress draco";
             
             // Verificar se o executável existe
             if (!CrossPlatformHelper.ExecutableExists(file) && !Path.IsPathRooted(file))
@@ -619,7 +753,7 @@ public class ModelViewer : MonoBehaviour
             }
 #else
             string file = GLTF_TRANSFORM_FALLBACK;
-            string args = $"optimize {Q(input)} {Q(output)} --compress draco";
+            string args = $"optimize {Q(actualInput)} {Q(output)} --compress draco";
 #endif
 
             int code = await RunProcessAsync(file, args);
@@ -627,10 +761,15 @@ public class ModelViewer : MonoBehaviour
             
             if (success)
             {
-                long inputSize = new FileInfo(input).Length;
+                long inputSize = new FileInfo(actualInput).Length;
                 long outputSize = new FileInfo(output).Length;
                 float compressionRatio = (float)outputSize / inputSize;
                 UDebug.Log($"[CompressDraco] ✅ Sucesso! Tamanho: {inputSize} → {outputSize} bytes (ratio: {compressionRatio:F2})");
+                
+                // Se criou um arquivo temporário (conversão OBJ), pode removê-lo se quiser
+                // (deixando comentado para manter o arquivo convertido)
+                // if (actualInput != input && File.Exists(actualInput))
+                //     File.Delete(actualInput);
             }
             else
             {
@@ -880,6 +1019,9 @@ public class ModelViewer : MonoBehaviour
         // Normaliza a escala do modelo se necessário
         NormalizeModelScale(_currentContainer);
 
+        // Atualizar fundo para skybox quando modelo é carregado
+        UpdateCameraBackground();
+
         // mede FPS + upsert CSV
         if (Metrics.Instance != null)
         {
@@ -1117,6 +1259,9 @@ public class ModelViewer : MonoBehaviour
                 
                 // Normaliza a escala do modelo se necessário
                 NormalizeModelScale(_currentContainer);
+                
+                // Atualizar fundo para skybox quando modelo é carregado
+                UpdateCameraBackground();
                 
                 // Notificar sucesso via eventos
                 GameEvents.NotifyModelLoaded(modelName, variant);
