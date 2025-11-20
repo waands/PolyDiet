@@ -10,6 +10,7 @@ public class CompareSplitView : MonoBehaviour
 
     [Header("Camera Sync")]
     public Camera mainOrbitCamera;   // a driver (tem SimpleOrbitCamera)
+    public ModelViewer modelViewer;   // referência para acessar configuração de skybox
 
     [Header("No Camera Message Fix")]
     public bool hideNoCameraMessage = true;
@@ -106,6 +107,10 @@ public class CompareSplitView : MonoBehaviour
             // followers garantidos
             BindFollower(camA, mainOrbitCamera);
             BindFollower(camB, mainOrbitCamera);
+
+            // Aplica configuração de skybox nas câmeras de comparação
+            // (modelViewer deve ser configurado pelo HUDController no Start())
+            UpdateCamerasSkybox();
 
             UpdateSplitUI();
         }
@@ -340,6 +345,76 @@ public class CompareSplitView : MonoBehaviour
         if (camB) { camB.targetTexture = null; camB.enabled = false; }
         if (mainOrbitCamera) mainOrbitCamera.enabled = true;
         if (viewCamera) viewCamera.enabled = true;
+    }
+
+    /// <summary>
+    /// Atualiza a configuração de skybox nas câmeras de comparação (camA e camB)
+    /// baseado na configuração do ModelViewer
+    /// </summary>
+    public void UpdateCamerasSkybox()
+    {
+        if (modelViewer == null)
+        {
+            Debug.LogWarning("[CompareSplitView] modelViewer não está configurado - não é possível atualizar skybox");
+            return;
+        }
+
+        bool currentUseSkybox = modelViewer.useSkybox;
+        Color backgroundColor = modelViewer.solidBackgroundColor;
+
+        Debug.Log($"[CompareSplitView] UpdateCamerasSkybox chamado - lendo useSkybox diretamente: {currentUseSkybox}");
+
+        if (camA != null)
+        {
+            if (currentUseSkybox)
+            {
+                camA.clearFlags = CameraClearFlags.Skybox;
+                Debug.Log($"[CompareSplitView] ✅ Câmera A ({camA.name}): Skybox habilitado");
+            }
+            else
+            {
+                camA.clearFlags = CameraClearFlags.SolidColor;
+                camA.backgroundColor = backgroundColor;
+                Debug.Log($"[CompareSplitView] ✅ Câmera A ({camA.name}): Cor sólida ({backgroundColor}) - useSkybox=false");
+            }
+            
+            if (!currentUseSkybox && camA.clearFlags != CameraClearFlags.SolidColor)
+            {
+                Debug.LogError($"[CompareSplitView] ⚠️ ERRO: useSkybox=false mas camA não está com SolidColor! Forçando correção...");
+                camA.clearFlags = CameraClearFlags.SolidColor;
+                camA.backgroundColor = backgroundColor;
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[CompareSplitView] camA é null!");
+        }
+
+        if (camB != null)
+        {
+            if (currentUseSkybox)
+            {
+                camB.clearFlags = CameraClearFlags.Skybox;
+                Debug.Log($"[CompareSplitView] ✅ Câmera B ({camB.name}): Skybox habilitado");
+            }
+            else
+            {
+                camB.clearFlags = CameraClearFlags.SolidColor;
+                camB.backgroundColor = backgroundColor;
+                Debug.Log($"[CompareSplitView] ✅ Câmera B ({camB.name}): Cor sólida ({backgroundColor}) - useSkybox=false");
+            }
+            
+            if (!currentUseSkybox && camB.clearFlags != CameraClearFlags.SolidColor)
+            {
+                Debug.LogError($"[CompareSplitView] ⚠️ ERRO: useSkybox=false mas camB não está com SolidColor! Forçando correção...");
+                camB.clearFlags = CameraClearFlags.SolidColor;
+                camB.backgroundColor = backgroundColor;
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[CompareSplitView] camB é null!");
+        }
     }
 
     public void ResetAllComparisonCameras()

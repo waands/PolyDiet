@@ -28,6 +28,7 @@ public class HUDController : MonoBehaviour
     public Transform variantChipContainer; // VariantChips
     public Toggle variantChipPrefab;       // ChipVariant (INATIVO)
     public Button buttonCompareLoad, buttonCompareClose;
+    public Toggle toggleSkybox;            // Toggle para controlar skybox no preview
 
     public CompareLoader compareLoader;    // _Systems/CompareRoot
     public CompareSplitView splitView;     // arraste o mesmo do CompareRoot
@@ -53,6 +54,33 @@ public class HUDController : MonoBehaviour
         if (buttonCompareLoad)  buttonCompareLoad.onClick.AddListener(() => _ = OnCompareConfirmAsync());
         if (buttonCompareClose) buttonCompareClose.onClick.AddListener(HideComparePanel);
         
+        if (toggleSkybox != null && viewer != null)
+        {
+            if (!toggleSkybox.gameObject.activeInHierarchy)
+            {
+                toggleSkybox.gameObject.SetActive(true);
+                Debug.Log("[HUD] Toggle skybox ativado no Awake");
+            }
+            toggleSkybox.interactable = true;
+            
+            toggleSkybox.onValueChanged.RemoveAllListeners();
+            toggleSkybox.onValueChanged.AddListener((value) => 
+            {
+                Debug.Log($"[HUD] Toggle skybox evento disparado: {value}, viewer.useSkybox atual: {viewer.useSkybox}");
+                OnSkyboxToggleChanged(value);
+            });
+            
+            toggleSkybox.SetIsOnWithoutNotify(viewer.useSkybox);
+            Debug.Log($"[HUD] Toggle skybox inicializado com valor: {viewer.useSkybox}");
+        }
+        else
+        {
+            if (toggleSkybox == null)
+                Debug.LogWarning("[HUD] toggleSkybox não está configurado!");
+            if (viewer == null)
+                Debug.LogWarning("[HUD] viewer não está configurado!");
+        }
+        
         // Hide comparePanel initially
         if (comparePanel) comparePanel.SetActive(false);
     }
@@ -72,6 +100,12 @@ public class HUDController : MonoBehaviour
         if (reportsPanel != null)
         {
             reportsPanel.SetActive(false);
+        }
+        
+        // Configurar referência do ModelViewer no CompareSplitView para acesso à configuração de skybox
+        if (splitView != null && viewer != null)
+        {
+            splitView.modelViewer = viewer;
         }
     }
 
@@ -202,6 +236,32 @@ public class HUDController : MonoBehaviour
         dropdownModel.onValueChanged.AddListener(_ => BuildVariantChips());
 
         BuildVariantChips();
+        
+        if (toggleSkybox != null)
+        {
+            if (!toggleSkybox.gameObject.activeInHierarchy)
+            {
+                toggleSkybox.gameObject.SetActive(true);
+                Debug.Log("[HUD] Toggle skybox ativado no painel de compare");
+            }
+            
+            toggleSkybox.interactable = true;
+            
+            if (viewer != null)
+            {
+                toggleSkybox.SetIsOnWithoutNotify(viewer.useSkybox);
+                Debug.Log($"[HUD] Toggle skybox sincronizado com viewer.useSkybox = {viewer.useSkybox}");
+            }
+            else
+            {
+                Debug.LogWarning("[HUD] viewer é null ao sincronizar toggle skybox!");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[HUD] toggleSkybox não está configurado no painel de compare!");
+        }
+        
         comparePanel.SetActive(true);
         UIInputLock.Lock(this); // trava câmera com painel aberto
     }
@@ -210,7 +270,6 @@ public class HUDController : MonoBehaviour
     {
         if (comparePanel) comparePanel.SetActive(false);
         
-        // Se estava em modo Compare, desativa e limpa
         if (splitView != null && splitView.compositeImage != null && 
             splitView.compositeImage.gameObject.activeInHierarchy)
         {
@@ -554,6 +613,52 @@ public class HUDController : MonoBehaviour
         else
         {
             Debug.LogWarning("[HUD] ReportsPanel não configurado!");
+        }
+    }
+
+    /// <summary>
+    /// Manipula mudança no toggle de skybox
+    /// </summary>
+    private void OnSkyboxToggleChanged(bool value)
+    {
+        if (viewer == null)
+        {
+            Debug.LogError("[HUD] viewer é null ao tentar alterar skybox!");
+            return;
+        }
+
+        Debug.Log($"[HUD] OnSkyboxToggleChanged: toggle={value}, viewer.useSkybox antes={viewer.useSkybox}");
+        
+        viewer.SetSkyboxEnabled(value);
+        
+        if (viewer.useSkybox != value)
+        {
+            Debug.LogError($"[HUD] ⚠️ ERRO: viewer.useSkybox não foi atualizado! Esperado: {value}, Atual: {viewer.useSkybox}");
+            viewer.useSkybox = value;
+            viewer.SetSkyboxEnabled(value);
+        }
+        else
+        {
+            Debug.Log($"[HUD] ✅ Validação OK: viewer.useSkybox={viewer.useSkybox} (esperado: {value})");
+        }
+        
+        bool isInComparisonMode = splitView != null && 
+                                  splitView.compositeImage != null && 
+                                  splitView.compositeImage.gameObject.activeInHierarchy;
+        
+        if (isInComparisonMode)
+        {
+            Debug.Log("[HUD] Modo de comparação ativo - atualizando câmeras camA e camB");
+            if (splitView.modelViewer == null)
+            {
+                splitView.modelViewer = viewer;
+                Debug.Log("[HUD] Configurando splitView.modelViewer");
+            }
+            splitView.UpdateCamerasSkybox();
+        }
+        else
+        {
+            Debug.Log("[HUD] Modo normal - câmera principal atualizada pelo ModelViewer");
         }
     }
 }

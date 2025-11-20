@@ -35,6 +35,10 @@ public class ModelViewer : MonoBehaviour
     [Tooltip("Cor do fundo quando não há modelo sendo visualizado")]
     public Color solidBackgroundColor = new Color(0.6235f, 0.8196f, 0.5843f, 1f); // #9FD195
 
+    [Header("Skybox")]
+    [Tooltip("Se deve usar skybox no preview (pode ser desabilitado pelo usuário)")]
+    public bool useSkybox = true;
+
     // ===== Descoberta dinâmica =====
     private readonly string[] _allKnownVariants = new[] { "original", "draco", "meshopt" };
     private readonly List<string> _modelNames = new();
@@ -96,16 +100,15 @@ public class ModelViewer : MonoBehaviour
     // ======== CAMERA BACKGROUND ========
 
     /// <summary>
-    /// Atualiza o fundo da câmera baseado no estado do modelo:
-    /// - Com modelo: usa Skybox
-    /// - Sem modelo: usa cor sólida
+    /// Atualiza o fundo da câmera baseado na configuração de skybox:
+    /// - Se useSkybox está habilitado: usa Skybox (se houver modelo carregado)
+    /// - Se useSkybox está desabilitado: sempre usa cor sólida (independente de ter modelo)
     /// Prioriza a câmera do orbitCamera (SimpleOrbitCamera)
     /// </summary>
     private void UpdateCameraBackground()
     {
         Camera cam = null;
         
-        // PRIORIDADE 1: Câmera do orbitCamera (SimpleOrbitCamera) - esta é a câmera principal
         if (orbitCamera != null)
         {
             cam = orbitCamera.GetComponent<Camera>();
@@ -115,7 +118,6 @@ public class ModelViewer : MonoBehaviour
             }
         }
         
-        // FALLBACK: Camera.main se orbitCamera não tiver câmera
         if (cam == null)
         {
             cam = Camera.main;
@@ -127,18 +129,58 @@ public class ModelViewer : MonoBehaviour
             return;
         }
 
-        // Se há modelo carregado, usa skybox; caso contrário, usa cor sólida
-        if (_currentContainer != null)
+        bool currentUseSkybox = useSkybox;
+        bool hasModel = _currentContainer != null;
+        bool shouldUseSkybox = currentUseSkybox && hasModel;
+        
+        UDebug.Log($"[ModelViewer] UpdateCameraBackground: useSkybox={currentUseSkybox}, hasModel={hasModel}, shouldUseSkybox={shouldUseSkybox}");
+        
+        if (shouldUseSkybox)
         {
             cam.clearFlags = CameraClearFlags.Skybox;
-            UDebug.Log($"[ModelViewer] Fundo alterado para Skybox (modelo visualizado) - Câmera: {cam.name}");
+            UDebug.Log($"[ModelViewer] ✅ Fundo alterado para Skybox - Câmera: {cam.name}");
         }
         else
         {
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = solidBackgroundColor;
-            UDebug.Log($"[ModelViewer] Fundo alterado para cor sólida: {solidBackgroundColor} - Câmera: {cam.name}");
+            string reason = !currentUseSkybox ? "useSkybox=false (escolha do usuário)" : "sem modelo";
+            UDebug.Log($"[ModelViewer] ✅ Fundo alterado para cor sólida ({reason}) - Câmera: {cam.name}, Cor: {solidBackgroundColor}");
         }
+        
+        if (!currentUseSkybox && cam.clearFlags != CameraClearFlags.SolidColor)
+        {
+            UDebug.LogError($"[ModelViewer] ⚠️ ERRO: useSkybox=false mas câmera não está com SolidColor! Forçando correção...");
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = solidBackgroundColor;
+        }
+    }
+
+    /// <summary>
+    /// Define se o skybox deve ser usado no preview
+    /// </summary>
+    /// <param name="enabled">True para usar skybox, false para usar cor sólida</param>
+    public void SetSkyboxEnabled(bool enabled)
+    {
+        if (useSkybox == enabled)
+        {
+            UDebug.Log($"[ModelViewer] SetSkyboxEnabled chamado mas valor já está {enabled} - ignorando");
+            UpdateCameraBackground();
+            return;
+        }
+        
+        UDebug.Log($"[ModelViewer] SetSkyboxEnabled: alterando useSkybox de {useSkybox} para {enabled}");
+        useSkybox = enabled;
+        UpdateCameraBackground();
+        
+        if (useSkybox != enabled)
+        {
+            UDebug.LogError($"[ModelViewer] ⚠️ ERRO: useSkybox não foi atualizado corretamente! Esperado: {enabled}, Atual: {useSkybox}");
+            useSkybox = enabled;
+            UpdateCameraBackground();
+        }
+        
+        UDebug.Log($"[ModelViewer] Skybox {(enabled ? "habilitado" : "desabilitado")} (useSkybox={useSkybox}, _currentContainer={(_currentContainer != null ? "existe" : "null")})");
     }
 
     void Awake()
@@ -293,7 +335,6 @@ public class ModelViewer : MonoBehaviour
                 Destroy(spawnParent.GetChild(i).gameObject);
         }
         
-        // Atualizar fundo para cor sólida quando não há modelo
         UpdateCameraBackground();
     }
 
@@ -400,11 +441,22 @@ public class ModelViewer : MonoBehaviour
                 return;
             }
 
-            // Normaliza a escala do modelo se necessário
             NormalizeModelScale(_currentContainer);
 
-            // Atualizar fundo para skybox quando modelo é carregado
+            bool currentSkyboxSetting = useSkybox;
+            UDebug.Log($"[OnClickLoadAsync] Antes de UpdateCameraBackground: useSkybox={currentSkyboxSetting}, _currentContainer={(_currentContainer != null ? "existe" : "null")}");
             UpdateCameraBackground();
+            
+            if (!currentSkyboxSetting)
+            {
+                Camera cam = orbitCamera != null ? orbitCamera.GetComponent<Camera>() : Camera.main;
+                if (cam != null && cam.clearFlags != CameraClearFlags.SolidColor)
+                {
+                    UDebug.LogError($"[OnClickLoadAsync] ⚠️ ERRO: useSkybox=false mas câmera não está com SolidColor após UpdateCameraBackground! Forçando correção...");
+                    cam.clearFlags = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = solidBackgroundColor;
+                }
+            }
 
             // Medir FPS após carregamento bem-sucedido
             if (Metrics.Instance != null && ok)
@@ -1016,11 +1068,22 @@ public class ModelViewer : MonoBehaviour
             return false;
         }
 
-        // Normaliza a escala do modelo se necessário
         NormalizeModelScale(_currentContainer);
 
-        // Atualizar fundo para skybox quando modelo é carregado
+        bool currentSkyboxSetting = useSkybox;
+        UDebug.Log($"[LoadAsync] Antes de UpdateCameraBackground: useSkybox={currentSkyboxSetting}, _currentContainer={(_currentContainer != null ? "existe" : "null")}");
         UpdateCameraBackground();
+        
+        if (!currentSkyboxSetting)
+        {
+            Camera cam = orbitCamera != null ? orbitCamera.GetComponent<Camera>() : Camera.main;
+            if (cam != null && cam.clearFlags != CameraClearFlags.SolidColor)
+            {
+                UDebug.LogError($"[LoadAsync] ⚠️ ERRO: useSkybox=false mas câmera não está com SolidColor após UpdateCameraBackground! Forçando correção...");
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = solidBackgroundColor;
+            }
+        }
 
         // mede FPS + upsert CSV
         if (Metrics.Instance != null)
@@ -1257,11 +1320,22 @@ public class ModelViewer : MonoBehaviour
             {
                 UDebug.Log($"[LoadOnlyAsync] ✅ Modelo carregado com sucesso!");
                 
-                // Normaliza a escala do modelo se necessário
                 NormalizeModelScale(_currentContainer);
                 
-                // Atualizar fundo para skybox quando modelo é carregado
+                bool currentSkyboxSetting = useSkybox;
+                UDebug.Log($"[LoadOnlyAsync] Antes de UpdateCameraBackground: useSkybox={currentSkyboxSetting}, _currentContainer={(_currentContainer != null ? "existe" : "null")}");
                 UpdateCameraBackground();
+                
+                if (!currentSkyboxSetting)
+                {
+                    Camera cam = orbitCamera != null ? orbitCamera.GetComponent<Camera>() : Camera.main;
+                    if (cam != null && cam.clearFlags != CameraClearFlags.SolidColor)
+                    {
+                        UDebug.LogError($"[LoadOnlyAsync] ⚠️ ERRO: useSkybox=false mas câmera não está com SolidColor após UpdateCameraBackground! Forçando correção...");
+                        cam.clearFlags = CameraClearFlags.SolidColor;
+                        cam.backgroundColor = solidBackgroundColor;
+                    }
+                }
                 
                 // Notificar sucesso via eventos
                 GameEvents.NotifyModelLoaded(modelName, variant);
