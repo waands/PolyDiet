@@ -8,6 +8,7 @@ Shader "Hidden/CompareComposite"
         _TexB("Tex B", 2D) = "black" {}
         _Split("Split", Range(0,1)) = 0.5
         _Feather("Feather", Range(0,0.05)) = 0
+        _SideBySide("SideBySide Mode", Float) = 0
     }
     SubShader
     {
@@ -27,6 +28,7 @@ Shader "Hidden/CompareComposite"
             TEXTURE2D(_TexB); SAMPLER(sampler_TexB);
             float _Split;
             float _Feather;
+            float _SideBySide;
 
             struct appdata { float4 vertex:POSITION; float2 uv:TEXCOORD0; float4 color:COLOR; };
             struct v2f     { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; float4 color:COLOR; };
@@ -36,8 +38,27 @@ Shader "Hidden/CompareComposite"
             half4 frag(v2f i) : SV_Target
             {
                 float2 uv = i.uv;
-                half4 a = SAMPLE_TEXTURE2D(_TexA, sampler_TexA, uv);
-                half4 b = SAMPLE_TEXTURE2D(_TexB, sampler_TexB, uv);
+
+                // Remap UVs when in side-by-side mode so each texture fills its half
+                float2 uvA = uv;
+                float2 uvB = uv;
+                if (_SideBySide > 0.5)
+                {
+                    float split = max(_Split, 0.0001);
+                    float invSplit = max(1.0 - _Split, 0.0001);
+                    if (uv.x <= _Split)
+                        uvA.x = uv.x / split;
+                    else
+                        uvB.x = (uv.x - _Split) / invSplit;
+                }
+
+                half4 a = SAMPLE_TEXTURE2D(_TexA, sampler_TexA, uvA);
+                half4 b = SAMPLE_TEXTURE2D(_TexB, sampler_TexB, uvB);
+
+                if (_SideBySide > 0.5)
+                {
+                    return (uv.x <= _Split ? a : b) * i.color;
+                }
 
                 if (_Feather > 0)
                 {

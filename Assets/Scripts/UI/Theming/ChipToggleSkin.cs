@@ -16,15 +16,31 @@ public class ChipToggleSkin : MonoBehaviour, IThemed, IPointerEnterHandler, IPoi
     private UnityAction<bool> cachedOnToggle;
     private Vector3 baseScale;
 
-    private void Awake() {
-    t = GetComponent<Toggle>();
-    baseScale = transform.localScale;
+    private void Awake() => EnsureToggle();
+
+    private void EnsureToggle() {
+        if (t) return;
+
+        t = GetComponent<Toggle>();
+        baseScale = transform.localScale;
+
         // Fallback: use Toggle.graphic if checkmark not assigned
         if (!checkmark && t && t.graphic is Image img)
             checkmark = img;
     }
 
     public void Apply(UiTheme theme) {
+        if (theme == null) {
+            Debug.LogWarning("[ChipToggleSkin] Theme passado é null");
+            return;
+        }
+
+        EnsureToggle();
+        if (t == null) {
+            Debug.LogWarning("[ChipToggleSkin] Toggle não encontrado");
+            return;
+        }
+
         if (bg) {
             if (theme.roundedSprite) { bg.sprite = theme.roundedSprite; bg.type = Image.Type.Sliced; }
             bg.color = t.isOn ? theme.chipOnBg : theme.chipOffBg;

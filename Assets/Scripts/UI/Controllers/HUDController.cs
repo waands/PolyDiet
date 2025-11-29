@@ -30,6 +30,9 @@ public class HUDController : MonoBehaviour
     public Button buttonCompareLoad, buttonCompareClose;
     public Toggle toggleSkybox;            // Toggle para controlar skybox no preview
 
+    [Header("Compare View Mode")]
+    public TMP_Dropdown dropdownViewMode;  // Dropdown para selecionar modo de visualização (Split/Side by Side)
+
     public CompareLoader compareLoader;    // _Systems/CompareRoot
     public CompareSplitView splitView;     // arraste o mesmo do CompareRoot
 
@@ -42,6 +45,12 @@ public class HUDController : MonoBehaviour
     
     // Controle de carregamento para evitar múltiplos carregamentos simultâneos
     private bool _isLoading = false;
+
+    // PlayerPrefs keys para persistir UX do painel
+    const string PrefModel     = "PolyDiet.ModelSelector.LastModel";
+    const string PrefVariants  = "PolyDiet.ModelSelector.LastVariants.";
+    const string PrefViewMode  = "PolyDiet.ModelSelector.LastViewMode";
+    const string PrefSkybox    = "PolyDiet.ModelSelector.Skybox";
 
     void Awake()
     {
@@ -56,6 +65,9 @@ public class HUDController : MonoBehaviour
         
         if (toggleSkybox != null && viewer != null)
         {
+            // Aplica preferência salva de skybox antes de sincronizar o toggle
+            ApplySavedSkyboxPreference();
+
             if (!toggleSkybox.gameObject.activeInHierarchy)
             {
                 toggleSkybox.gameObject.SetActive(true);
@@ -68,6 +80,7 @@ public class HUDController : MonoBehaviour
             {
                 Debug.Log($"[HUD] Toggle skybox evento disparado: {value}, viewer.useSkybox atual: {viewer.useSkybox}");
                 OnSkyboxToggleChanged(value);
+                SaveSkyboxPreference(value);
             });
             
             toggleSkybox.SetIsOnWithoutNotify(viewer.useSkybox);
@@ -225,17 +238,30 @@ public class HUDController : MonoBehaviour
         dropdownModel.AddOptions(models.Count > 0 ? models : new System.Collections.Generic.List<string> { "(sem modelos)" });
         dropdownModel.interactable = models.Count > 0;
         
-        // Garantir que o primeiro modelo válido seja selecionado
-        if (models.Count > 0)
-        {
-            dropdownModel.value = 0;
-            dropdownModel.RefreshShownValue();
-        }
-        
         dropdownModel.onValueChanged.RemoveAllListeners();
-        dropdownModel.onValueChanged.AddListener(_ => BuildVariantChips());
+        dropdownModel.onValueChanged.AddListener(_ => {
+            SaveModelPreference(GetSelectedModelName());
+            BuildVariantChips();
+        });
+
+        RestoreModelSelection(models);
 
         BuildVariantChips();
+        
+        // Inicializar dropdown de modo de visualização
+        if (dropdownViewMode != null)
+        {
+            dropdownViewMode.ClearOptions();
+            dropdownViewMode.AddOptions(new System.Collections.Generic.List<string> { "Split", "Side by Side" });
+            dropdownViewMode.onValueChanged.RemoveAllListeners();
+            dropdownViewMode.onValueChanged.AddListener(OnViewModeChanged);
+            RestoreViewModeSelection();
+            Debug.Log("[HUD] Dropdown de modo de visualização inicializado");
+        }
+        else
+        {
+            Debug.LogWarning("[HUD] dropdownViewMode não está configurado no painel de compare!");
+        }
         
         if (toggleSkybox != null)
         {
@@ -306,19 +332,23 @@ public class HUDController : MonoBehaviour
 
         Debug.Log($"[HUD] Found {variants.Count} variants for model '{model}': [{string.Join(", ", variants)}]");
 
+        var savedVariants = LoadSavedVariantsForModel(model);
         foreach (var variant in variants)
         {
-            CreateVariantChip(variant);
+            CreateVariantChip(variant, savedVariants.Contains(variant));
         }
         
         Debug.Log($"[HUD] BuildVariantChips completed. Total chips created: {variants.Count}");
+
+        // Se ainda não havia seleção salva, persistir seleção atual (vazia) para o modelo
+        SaveVariantPreference(model);
     }
 
     /// <summary>
     /// Cria um chip individual para uma variante
     /// </summary>
     /// <param name="variant">Nome da variante</param>
-    private void CreateVariantChip(string variant)
+    private void CreateVariantChip(string variant, bool preSelect)
     {
         // Filtrar apenas variantes válidas
         if (string.IsNullOrEmpty(variant) || variant.Contains("/") || variant.Contains("\\"))
@@ -333,6 +363,14 @@ public class HUDController : MonoBehaviour
         if (label) label.SetText(variant);
         chip.isOn = false;
         chip.onValueChanged.AddListener(on => OnVariantChipChanged(variant, on));
+
+        // Restaura seleção sem disparar evento
+        if (preSelect)
+        {
+            chip.SetIsOnWithoutNotify(true);
+            if (!_selectedVariants.Contains(variant) && _selectedVariants.Count < 2)
+                _selectedVariants.Add(variant);
+        }
         Debug.Log($"[HUD] Created chip for variant: '{variant}'");
     }
 
@@ -364,6 +402,7 @@ public class HUDController : MonoBehaviour
         }
         
         Debug.Log($"[HUD] Current selected variants: [{string.Join(", ", _selectedVariants)}]");
+        SaveVariantPreference(GetSelectedModelName());
     }
 
     Toggle FindToggleByVariant(string v)
@@ -405,15 +444,18 @@ public class HUDController : MonoBehaviour
             string model = GetSelectedModelName();
             Debug.Log($"[HUD] Selected model: '{model}'");
             
-            if (_selectedVariants.Count == 1)
-            {
-                await LoadSingleVariantAsync(model, _selectedVariants[0]);
-            }
-            else
-            {
-                await LoadComparisonModeAsync(model, _selectedVariants[0], _selectedVariants[1]);
-            }
+        if (_selectedVariants.Count == 1)
+        {
+            await LoadSingleVariantAsync(model, _selectedVariants[0]);
         }
+        else
+        {
+            await LoadComparisonModeAsync(model, _selectedVariants[0], _selectedVariants[1]);
+        }
+
+        SaveModelPreference(model);
+        SaveVariantPreference(model);
+    }
         finally
         {
             _isLoading = false;
@@ -521,7 +563,21 @@ public class HUDController : MonoBehaviour
         }
         
         Debug.Log("[HUD] Activating split view and loading both models");
-        splitView.SetCompareActive(true);    // <- ativa overlay + RTs
+        
+        // Determina o modo de visualização baseado no dropdown
+        ViewMode viewMode = ViewMode.Split; // padrão
+        if (dropdownViewMode != null && dropdownViewMode.options.Count > 0)
+        {
+            string selectedMode = dropdownViewMode.options[dropdownViewMode.value].text;
+            if (selectedMode == "Side by Side")
+            {
+                viewMode = ViewMode.SideBySide;
+            }
+            Debug.Log($"[HUD] Modo de visualização selecionado: {selectedMode} (ViewMode.{viewMode})");
+        }
+        
+        splitView.SetCompareActive(true, viewMode);    // <- ativa overlay + RTs com modo selecionado
+        SaveViewModePreference(viewMode);
         
         // Fechar painel UI mas manter câmera travada durante carregamento
         if (comparePanel) comparePanel.SetActive(false);
@@ -660,5 +716,83 @@ public class HUDController : MonoBehaviour
         {
             Debug.Log("[HUD] Modo normal - câmera principal atualizada pelo ModelViewer");
         }
+    }
+
+    // ========================= PREFERÊNCIAS / UX =========================
+    void RestoreModelSelection(System.Collections.Generic.List<string> models)
+    {
+        if (dropdownModel == null || models.Count == 0) return;
+
+        var saved = PlayerPrefs.GetString(PrefModel, string.IsNullOrEmpty(_currentLoadedModel) ? "" : _currentLoadedModel);
+        int idx = (!string.IsNullOrEmpty(saved)) ? models.IndexOf(saved) : -1;
+        if (idx < 0) idx = 0;
+        dropdownModel.value = idx;
+        dropdownModel.RefreshShownValue();
+    }
+
+    void SaveModelPreference(string model)
+    {
+        if (string.IsNullOrEmpty(model) || model == "(sem modelos)") return;
+        PlayerPrefs.SetString(PrefModel, model);
+        PlayerPrefs.Save();
+    }
+
+    System.Collections.Generic.List<string> LoadSavedVariantsForModel(string model)
+    {
+        if (string.IsNullOrEmpty(model)) return new System.Collections.Generic.List<string>();
+        var raw = PlayerPrefs.GetString(GetVariantPrefKey(model), "");
+        return raw.Split('|').Where(v => !string.IsNullOrEmpty(v)).Take(2).ToList();
+    }
+
+    void SaveVariantPreference(string model)
+    {
+        if (string.IsNullOrEmpty(model)) return;
+        var raw = string.Join("|", _selectedVariants.Take(2));
+        PlayerPrefs.SetString(GetVariantPrefKey(model), raw);
+        PlayerPrefs.Save();
+    }
+
+    string GetVariantPrefKey(string model) => $"{PrefVariants}{model}";
+
+    void RestoreViewModeSelection()
+    {
+        if (dropdownViewMode == null) return;
+        var saved = LoadSavedViewMode();
+        dropdownViewMode.value = saved == ViewMode.SideBySide ? 1 : 0;
+        dropdownViewMode.RefreshShownValue();
+    }
+
+    void OnViewModeChanged(int value)
+    {
+        var mode = value == 1 ? ViewMode.SideBySide : ViewMode.Split;
+        SaveViewModePreference(mode);
+    }
+
+    ViewMode LoadSavedViewMode()
+    {
+        var raw = PlayerPrefs.GetString(PrefViewMode, ViewMode.Split.ToString());
+        return System.Enum.TryParse<ViewMode>(raw, out var m) ? m : ViewMode.Split;
+    }
+
+    void SaveViewModePreference(ViewMode mode)
+    {
+        PlayerPrefs.SetString(PrefViewMode, mode.ToString());
+        PlayerPrefs.Save();
+    }
+
+    void ApplySavedSkyboxPreference()
+    {
+        if (viewer == null) return;
+        if (!PlayerPrefs.HasKey(PrefSkybox)) return;
+
+        bool saved = PlayerPrefs.GetInt(PrefSkybox, viewer.useSkybox ? 1 : 0) == 1;
+        viewer.SetSkyboxEnabled(saved);
+        viewer.useSkybox = saved;
+    }
+
+    void SaveSkyboxPreference(bool value)
+    {
+        PlayerPrefs.SetInt(PrefSkybox, value ? 1 : 0);
+        PlayerPrefs.Save();
     }
 }

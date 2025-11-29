@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+public enum ViewMode { Split, SideBySide }
+
 public class CompareSplitView : MonoBehaviour
 {
     [Header("Cameras (full-screen)")]
@@ -31,7 +33,9 @@ public class CompareSplitView : MonoBehaviour
     [Header("Input Lock")]
     public bool lockCameraWhileDragging = true;
 
+    private const string SideBySideProp = "_SideBySide";
     Material _mat; RenderTexture _rtA, _rtB;
+    private ViewMode _currentViewMode = ViewMode.Split;
 
     void Awake()
     {
@@ -81,17 +85,36 @@ public class CompareSplitView : MonoBehaviour
     }
 
     // === API chamada pelo HUD/Loader ===
-    public void SetCompareActive(bool on)
+    public void SetCompareActive(bool on, ViewMode mode = ViewMode.Split)
     {
+        _currentViewMode = mode;
+        Debug.Log($"[CompareSplitView] SetCompareActive chamado - on={on}, mode={mode}");
+        
         if (on)
         {
             EnsureMaterial();
+            ApplyShaderMode();
             EnsureRTs();
 
             // liga overlay
             SafeSetActive(compositeImage, true);
-            SafeSetActive(splitLine, true);
-            SafeSetActive(splitSlider, true); // ADICIONADO: ativa o slider
+            
+            // Configura UI baseado no modo
+            if (_currentViewMode == ViewMode.SideBySide)
+            {
+                // Modo Side by Side: oculta slider e linha divisória
+                SafeSetActive(splitLine, false);
+                SafeSetActive(splitSlider, false);
+                Debug.Log("[CompareSplitView] ✅ Modo Side by Side - slider e linha divisória ocultos");
+            }
+            else
+            {
+                // Modo Split: mostra slider e linha divisória
+                SafeSetActive(splitLine, true);
+                SafeSetActive(splitSlider, true);
+                Debug.Log("[CompareSplitView] ✅ Modo Split - slider e linha divisória visíveis");
+            }
+            
             SafeSetActive(labelLeft, true);   // Ativa label esquerdo
             SafeSetActive(labelRight, true);  // Ativa label direito
             if (compositeImage) compositeImage.texture = _rtA; // qualquer; o shader usa _TexA/_TexB
@@ -99,6 +122,7 @@ public class CompareSplitView : MonoBehaviour
             // roteia render para RTs
             if (camA) { camA.targetTexture = _rtA; camA.enabled = true; }
             if (camB) { camB.targetTexture = _rtB; camB.enabled = true; }
+            Debug.Log($"[CompareSplitView] Câmeras configuradas - camA: {(_rtA != null ? $"RT {_rtA.width}x{_rtA.height}" : "null")}, camB: {(_rtB != null ? $"RT {_rtB.width}x{_rtB.height}" : "null")}");
 
             // driver para de renderizar, mas continua lendo input
             if (mainOrbitCamera) mainOrbitCamera.enabled = false;
@@ -130,6 +154,41 @@ public class CompareSplitView : MonoBehaviour
             if (mainOrbitCamera) mainOrbitCamera.enabled = true;
         }
     }
+    
+    /// <summary>
+    /// Define o modo de visualização (Split ou SideBySide)
+    /// </summary>
+    /// <param name="mode">Modo de visualização desejado</param>
+    public void SetViewMode(ViewMode mode)
+    {
+        if (_currentViewMode == mode) return;
+        
+        _currentViewMode = mode;
+        ApplyShaderMode();
+        RecreateRTsForMode();
+        
+        // Se estiver em modo de comparação ativo, atualiza a UI
+        if (compositeImage != null && compositeImage.gameObject.activeInHierarchy)
+        {
+            if (_currentViewMode == ViewMode.SideBySide)
+            {
+                SafeSetActive(splitLine, false);
+                SafeSetActive(splitSlider, false);
+            }
+            else
+            {
+                SafeSetActive(splitLine, true);
+                SafeSetActive(splitSlider, true);
+            }
+            
+            UpdateSplitUI();
+        }
+    }
+    
+    /// <summary>
+    /// Retorna o modo de visualização atual
+    /// </summary>
+    public ViewMode GetViewMode() => _currentViewMode;
 
     void EnsureMaterial()
     {
@@ -139,9 +198,20 @@ public class CompareSplitView : MonoBehaviour
         if (compositeImage) compositeImage.material = _mat;
     }
 
+    void RecreateRTsForMode()
+    {
+        // força recriação com resolução ajustada para cada modo, evitando distorção no side-by-side
+        if (_rtA) { _rtA.Release(); _rtA = null; }
+        if (_rtB) { _rtB.Release(); _rtB = null; }
+        EnsureRTs();
+
+        if (camA) camA.targetTexture = _rtA;
+        if (camB) camB.targetTexture = _rtB;
+    }
+
     void EnsureRTs()
     {
-        int w = Mathf.Max(1, Screen.width);
+        int w = Mathf.Max(1, _currentViewMode == ViewMode.SideBySide ? Screen.width / 2 : Screen.width);
         int h = Mathf.Max(1, Screen.height);
         if (_rtA && (_rtA.width != w || _rtA.height != h)) { _rtA.Release(); _rtA = null; }
         if (_rtB && (_rtB.width != w || _rtB.height != h)) { _rtB.Release(); _rtB = null; }
@@ -229,54 +299,84 @@ public class CompareSplitView : MonoBehaviour
 
     void UpdateSplitUI()
     {
-        if (!splitSlider || !compositeImage) return;
+        if (!compositeImage) return;
         
-        float sliderValue = splitSlider.value;
+        float splitValue;
         
-        // Calcula a posição real do slider em coordenadas de tela
-        // O slider tem width fixo (900) e pode estar deslocado na tela
-        RectTransform sliderRect = splitSlider.GetComponent<RectTransform>();
+        if (_currentViewMode == ViewMode.SideBySide)
+        {
+            // Modo Side by Side: fixa divisão no meio (0.5)
+            splitValue = 0.5f;
+            Debug.Log($"[CompareSplitView] Modo Side by Side ativo - fixando divisão em 0.5");
+        }
+        else
+        {
+            // Modo Split: usa valor do slider
+            if (!splitSlider) return;
+            splitValue = splitSlider.value;
+        }
+        
+        // Calcula a posição real em coordenadas de tela
         RectTransform imageRect = compositeImage.rectTransform;
         
-        if (sliderRect && imageRect)
+        if (imageRect)
         {
-            // Converte posições para espaço de tela (screen space)
-            Canvas canvas = compositeImage.canvas;
-            Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            // Para modo Side by Side, usa valor fixo 0.5
+            // Para modo Split, calcula baseado no slider
+            float normalizedX = splitValue;
             
-            // Pega os cantos do slider em screen space
-            Vector3[] sliderCorners = new Vector3[4];
-            sliderRect.GetWorldCorners(sliderCorners);
-            
-            // Pega os cantos da imagem em screen space  
-            Vector3[] imageCorners = new Vector3[4];
-            imageRect.GetWorldCorners(imageCorners);
-            
-            // Calcula limites do slider e da imagem em coordenadas de tela
-            float sliderLeft = sliderCorners[0].x;
-            float sliderRight = sliderCorners[2].x;
-            float sliderWidth = sliderRight - sliderLeft;
-            
-            float imageLeft = imageCorners[0].x;
-            float imageRight = imageCorners[2].x;
-            float imageWidth = imageRight - imageLeft;
-            
-            // Posição absoluta do handle do slider
-            float handlePosX = sliderLeft + (sliderWidth * sliderValue);
-            
-            // Converte para coordenada normalizada (0-1) no espaço da imagem
-            float normalizedX = (handlePosX - imageLeft) / imageWidth;
-            normalizedX = Mathf.Clamp01(normalizedX);
+            if (_currentViewMode == ViewMode.Split && splitSlider)
+            {
+                // Calcula posição baseada no slider (código original)
+                RectTransform sliderRect = splitSlider.GetComponent<RectTransform>();
+                
+                if (sliderRect)
+                {
+                    // Converte posições para espaço de tela (screen space)
+                    Canvas canvas = compositeImage.canvas;
+                    Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+                    
+                    // Pega os cantos do slider em screen space
+                    Vector3[] sliderCorners = new Vector3[4];
+                    sliderRect.GetWorldCorners(sliderCorners);
+                    
+                    // Pega os cantos da imagem em screen space  
+                    Vector3[] imageCorners = new Vector3[4];
+                    imageRect.GetWorldCorners(imageCorners);
+                    
+                    // Calcula limites do slider e da imagem em coordenadas de tela
+                    float sliderLeft = sliderCorners[0].x;
+                    float sliderRight = sliderCorners[2].x;
+                    float sliderWidth = sliderRight - sliderLeft;
+                    
+                    float imageLeft = imageCorners[0].x;
+                    float imageRight = imageCorners[2].x;
+                    float imageWidth = imageRight - imageLeft;
+                    
+                    // Posição absoluta do handle do slider
+                    float handlePosX = sliderLeft + (sliderWidth * splitValue);
+                    
+                    // Converte para coordenada normalizada (0-1) no espaço da imagem
+                    normalizedX = (handlePosX - imageLeft) / imageWidth;
+                    normalizedX = Mathf.Clamp01(normalizedX);
+                }
+            }
             
             // Atualiza shader com a posição correta
             if (_mat)
             {
+                ApplyShaderMode();
                 _mat.SetFloat("_Split", normalizedX);
                 _mat.SetFloat("_Feather", feather);
+                Debug.Log($"[CompareSplitView] Shader atualizado - _Split={normalizedX:F3}, Modo={_currentViewMode}");
+            }
+            else
+            {
+                Debug.LogWarning("[CompareSplitView] Material não está inicializado!");
             }
             
-            // Alinha linha divisória na mesma posição
-            if (splitLine)
+            // Alinha linha divisória na mesma posição (apenas se estiver visível)
+            if (splitLine && splitLine.gameObject.activeInHierarchy)
             {
                 splitLine.SetParent(imageRect, false);
                 splitLine.anchorMin = new Vector2(normalizedX, 0f);
@@ -284,26 +384,31 @@ public class CompareSplitView : MonoBehaviour
                 splitLine.anchoredPosition = Vector2.zero;
                 splitLine.sizeDelta = new Vector2(2f, 0f);
             }
-            
-            // Debug detalhado
-            // Debug.Log($"[Split] Slider: {sliderValue:F3} | HandleX: {handlePosX:F1} | ImageNormalized: {normalizedX:F3}");
         }
         else
         {
-            // Fallback: usa valor direto do slider (comportamento antigo)
+            // Fallback: usa valor direto
             if (_mat)
             {
-                _mat.SetFloat("_Split", sliderValue);
+                ApplyShaderMode();
+                _mat.SetFloat("_Split", splitValue);
                 _mat.SetFloat("_Feather", feather);
+                Debug.Log($"[CompareSplitView] Fallback - _Split={splitValue:F3}, Modo={_currentViewMode}");
             }
             
-            if (splitLine)
+            if (splitLine && splitLine.gameObject.activeInHierarchy)
             {
-                splitLine.anchorMin = new Vector2(sliderValue, 0f);
-                splitLine.anchorMax = new Vector2(sliderValue, 1f);
+                splitLine.anchorMin = new Vector2(splitValue, 0f);
+                splitLine.anchorMax = new Vector2(splitValue, 1f);
                 splitLine.anchoredPosition = Vector2.zero;
             }
         }
+    }
+
+    void ApplyShaderMode()
+    {
+        if (!_mat) return;
+        _mat.SetFloat(SideBySideProp, _currentViewMode == ViewMode.SideBySide ? 1f : 0f);
     }
 
     static void SafeSetActive(Graphic g, bool on) { if (g) g.gameObject.SetActive(on); }

@@ -37,6 +37,7 @@ public class WizardController : MonoBehaviour
     private string _importSourcePath;   // caminho do arquivo escolhido
     private string _modelName;          // deduzido do arquivo
     private string[] _runOrder = new[] { "original", "meshopt", "draco" };
+    private const string PrefWizardLastImportDir = "PolyDiet.Wizard.LastImportDir";
 
     void Awake()
     {
@@ -226,9 +227,22 @@ public class WizardController : MonoBehaviour
 #if UNITY_EDITOR
         if (useEditorFilePicker)
         {
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Selecione modelo 3D", "", "glb,gltf,obj,fbx");
+            string lastDir = PlayerPrefs.GetString(PrefWizardLastImportDir, "");
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Selecione modelo 3D", lastDir, "glb,gltf,obj,fbx");
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
                 _importSourcePath = path;
+                try
+                {
+                    var dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir))
+                    {
+                        PlayerPrefs.SetString(PrefWizardLastImportDir, dir);
+                        PlayerPrefs.Save();
+                    }
+                }
+                catch { /* ignore */ }
+            }
         }
         else
 #endif
